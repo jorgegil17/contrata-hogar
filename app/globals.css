@@ -62,6 +62,7 @@ button{cursor:pointer}
 .personhead strong{font-size:13px}
 .personhead small{font-size:10px;color:var(--muted);margin-top:4px}
 .personhead button{border:0;background:none;color:#829089}
+.personhead .edit-link{color:var(--green);font-size:10px;font-weight:750;padding:8px 10px;border-radius:14px;background:#eaf7fd;white-space:nowrap}
 dl{margin:0}
 dl>div{display:grid;grid-template-columns:1fr 1.25fr;padding:14px 0;border-bottom:1px solid #edf0ee}
 dl>div:last-child{border:0;padding-bottom:0}
@@ -88,6 +89,22 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .doc strong{font-size:11px}
 .doc small{font-size:9px;color:var(--muted);margin-top:3px}
 .toast{position:fixed;right:24px;bottom:24px;background:#087dbd;color:#fff;padding:13px 18px;border-radius:14px;box-shadow:0 12px 30px #087dbd44;font-size:12px;z-index:20}
+.modal-backdrop{position:fixed;inset:0;background:#18313e73;backdrop-filter:blur(5px);display:grid;place-items:center;padding:22px;z-index:30}
+.edit-modal{width:min(520px,100%);background:#fff;border-radius:24px;padding:28px;box-shadow:0 30px 80px #102d3c4d}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+.modal-head span{color:var(--green);font-size:9px;font-weight:800;letter-spacing:1.1px}
+.modal-head h2{margin:6px 0 0;font-size:25px;letter-spacing:-.7px}
+.modal-head button{border:0;background:#f1f5f7;color:#61727c;width:32px;height:32px;border-radius:50%;font-size:20px;line-height:1}
+.modal-intro{font-size:11px;color:var(--muted);line-height:1.55;margin:0 0 22px}
+.edit-modal>label,.field-row label{display:grid;gap:7px;font-size:11px;font-weight:700;color:#52636d}
+.edit-modal input{width:100%;border:1px solid #d7e1e7;border-radius:12px;background:#f9fbfc;padding:12px 13px;color:var(--ink);font-weight:650;outline:none}
+.edit-modal input:focus{border-color:var(--green);box-shadow:0 0 0 3px #1189c71f}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}
+.estimate{margin-top:20px;background:#eaf7fd;border-radius:16px;padding:16px 18px;display:grid;grid-template-columns:1fr auto;align-items:center}
+.estimate span{font-size:10px;color:#5f7580}.estimate strong{font-size:18px;color:#087dbd}.estimate small{grid-column:1/-1;font-size:9px;color:#7d8e97;margin-top:4px}
+.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}
+.modal-actions button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:18px;padding:10px 17px;font-size:11px;font-weight:750}
+.modal-actions .primary{background:var(--green);border-color:var(--green);color:#fff}
 .receipt{display:none}
 
 @media(max-width:820px){.sidebar{width:76px;padding:25px 12px}
@@ -110,6 +127,8 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .help{font-size:0}
 .hero h2{font-size:27px}
 .tasks button{display:none}
+.field-row{grid-template-columns:1fr}
+.edit-modal{padding:22px}
 }
 
 @media print{body{background:#fff}
