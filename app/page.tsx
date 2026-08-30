@@ -7,7 +7,13 @@ export default function Home(){
  const deduction=useMemo(()=>+(salary*.0637).toFixed(2),[salary]),net=salary-deduction;
  const notify=(m:string)=>{setToast(m);window.setTimeout(()=>setToast(''),2600)};
  return <main className="shell">
-  <aside className="sidebar"><a className="brand" href="#top"><b>C</b><span>cuida</span></a><nav><a className="active" href="#top"><i>⌂</i><span>Resumen</span></a><a href="#persona"><i>♙</i><span>Persona</span></a><a href="#docs"><i>▤</i><span>Documentos</span></a><a href="#tareas"><i>□</i><span>Calendario</span></a></nav><div className="sidebottom"><a href="#ajustes"><i>⚙</i><span>Ajustes</span></a><div className="profile"><b>JM</b><p>Jorge M.<small>Empleador</small></p></div></div></aside>
+  <aside className="sidebar"><a className="brand" href="#top" aria-label="Contrata Hogar, inicio"><b>C</b><span>Contrata Hogar</span></a>
+<nav><a className="active" href="#top"><i>⌂</i><span>Resumen</span></a>
+<a href="#persona"><i>♙</i><span>Persona</span></a>
+<a href="#docs"><i>▤</i><span>Documentos</span></a>
+<a href="#tareas"><i>□</i><span>Calendario</span></a>
+</nav><div className="sidebottom"><a href="#ajustes"><i>⚙</i><span>Ajustes</span></a>
+<div className="profile"><b>JM</b><p>Jorge M.<small>Empleador</small></p></div></div></aside>
   <section className="workspace" id="top"><header><div><small>DOMINGO, 30 DE AGOSTO</small><h1>Buenos días, Jorge</h1></div><button className="help" onClick={()=>notify('Centro de ayuda: disponible en la siguiente versión')}>ⓘ Ayuda</button></header>
    <div className="content"><section className="hero"><div><label><i/> RELACIÓN LABORAL ACTIVA</label><h2>Todo está al día</h2><p>Tu próxima tarea es pagar la nómina de agosto.</p></div><div className="next"><span>Próximo pago</span><b>31 AGO</b><small>Mañana</small></div></section>
     <Title title="Este mes" action="Ver calendario →" onClick={()=>notify('Calendario abierto')}/>
