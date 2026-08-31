@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { jsPDF } from 'jspdf';
 
 type Contract = {
   startDate: string;
@@ -22,7 +23,6 @@ type Contract = {
 };
 const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 12, hourlyRate: 10, workDays: 'Lunes, miércoles y viernes', paymentDay: 31, extraPays: 'prorated', trialPeriod: 30, vacationDays: 30, employerName: '', employerDni: '', employerAddress: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '' };
 const euro = (n: number) => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character] || character);
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -86,18 +86,37 @@ export default function Home() {
   const generateContract = () => {
     if (!partiesComplete) { openContractWizard(); notify('Completa primero los datos de ambas partes'); return; }
     const monthlySalary = +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2);
-    const value = (text: string) => escapeHtml(text);
-    const documentHtml = `<!doctype html><html><head><meta charset="utf-8"><title>Borrador de contrato</title><style>body{font-family:Arial,sans-serif;color:#17242b;max-width:780px;margin:40px auto;line-height:1.5}h1{color:#087dbd;font-size:26px}h2{font-size:17px;margin-top:28px;border-bottom:1px solid #ccd9df;padding-bottom:6px}.parties{display:grid;grid-template-columns:1fr 1fr;gap:24px}.box{border:1px solid #ccd9df;padding:16px}table{width:100%;border-collapse:collapse}td{border:1px solid #ccd9df;padding:10px}td:first-child{font-weight:bold;width:34%}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:70px}.warning{margin-top:50px;padding:12px;background:#fff5dc;font-size:12px}</style></head><body><p>CONTRATO DE TRABAJO INDEFINIDO</p><h1>Servicio del hogar familiar</h1><p>Borrador generado por Contrata Hogar</p><h2>1. Partes del contrato</h2><div class="parties"><div class="box"><b>Persona empleadora</b><br>${value(contract.employerName)}<br>DNI/NIE: ${value(contract.employerDni)}<br>${value(contract.employerAddress)}</div><div class="box"><b>Persona trabajadora</b><br>${value(contract.employeeName)}<br>DNI/NIE: ${value(contract.employeeDni)}<br>N.º Seguridad Social: ${value(contract.employeeNss)}<br>${value(contract.employeeAddress)}</div></div><h2>2. Condiciones acordadas</h2><table><tr><td>Modalidad</td><td>Contrato indefinido a tiempo parcial</td></tr><tr><td>Fecha de inicio</td><td>${formatDate(contract.startDate)}</td></tr><tr><td>Jornada</td><td>${contract.weeklyHours} horas semanales</td></tr><tr><td>Distribución</td><td>${value(contract.workDays)}</td></tr><tr><td>Retribución</td><td>${euro(contract.hourlyRate)} por hora · ${euro(monthlySalary)} mensuales estimados</td></tr><tr><td>Pagas extraordinarias</td><td>${contract.extraPays === 'prorated' ? 'Prorrateadas en 12 mensualidades' : 'Dos pagas separadas'}</td></tr><tr><td>Vacaciones</td><td>${contract.vacationDays} días naturales al año</td></tr><tr><td>Periodo de prueba</td><td>${contract.trialPeriod} días</td></tr><tr><td>Pago habitual</td><td>Día ${contract.paymentDay} de cada mes</td></tr></table><p>No se acuerdan horas de presencia, pernoctas ni prestaciones salariales en especie. En lo no previsto se estará a la normativa vigente aplicable a la relación laboral especial del servicio del hogar familiar.</p><div class="signatures"><p>Firma de la persona empleadora</p><p>Firma de la persona trabajadora</p></div><p class="warning"><b>BORRADOR</b> — Revisa el documento antes de firmarlo o presentarlo.</p></body></html>`;
-    const blob = new Blob(['\ufeff', documentHtml], { type: 'application/msword;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = window.document.createElement('a');
-    link.href = url;
-    link.download = `borrador-contrato-${contract.startDate}.doc`;
-    window.document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    notify('Borrador descargado en formato Word');
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
+    const left = 20;
+    const width = 170;
+    let y = 20;
+    pdf.setTextColor(8, 125, 189).setFontSize(10).text('CONTRATO DE TRABAJO INDEFINIDO', left, y);
+    y += 10;
+    pdf.setTextColor(23, 36, 43).setFont('helvetica', 'bold').setFontSize(22).text('Servicio del hogar familiar', left, y);
+    y += 7;
+    pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(95, 117, 128).text('Borrador generado por Contrata Hogar', left, y);
+    y += 14;
+    const heading = (title: string) => { pdf.setFont('helvetica', 'bold').setFontSize(13).setTextColor(23, 36, 43).text(title, left, y); y += 3; pdf.setDrawColor(204, 217, 223).line(left, y, left + width, y); y += 8; };
+    const paragraph = (text: string) => { pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(45, 59, 66); const lines = pdf.splitTextToSize(text, width); pdf.text(lines, left, y); y += lines.length * 5 + 3; };
+    heading('1. Partes del contrato');
+    const partyWidth = 81;
+    pdf.setDrawColor(204, 217, 223).rect(left, y, partyWidth, 34).rect(left + 89, y, partyWidth, 34);
+    pdf.setFontSize(9).setFont('helvetica', 'bold').text('Persona empleadora', left + 4, y + 6).text('Persona trabajadora', left + 93, y + 6);
+    pdf.setFont('helvetica', 'normal').text(pdf.splitTextToSize(`${contract.employerName}\nDNI/NIE: ${contract.employerDni}\n${contract.employerAddress}`, partyWidth - 8), left + 4, y + 12).text(pdf.splitTextToSize(`${contract.employeeName}\nDNI/NIE: ${contract.employeeDni}\nN.º Seguridad Social: ${contract.employeeNss}\n${contract.employeeAddress}`, partyWidth - 8), left + 93, y + 12);
+    y += 44;
+    heading('2. Condiciones acordadas');
+    const rows = [['Modalidad', 'Contrato indefinido a tiempo parcial'], ['Fecha de inicio', formatDate(contract.startDate)], ['Jornada', `${contract.weeklyHours} horas semanales`], ['Distribución', contract.workDays], ['Retribución', `${euro(contract.hourlyRate)} por hora - ${euro(monthlySalary)} mensuales estimados`], ['Pagas extraordinarias', contract.extraPays === 'prorated' ? 'Prorrateadas en 12 mensualidades' : 'Dos pagas separadas'], ['Vacaciones', `${contract.vacationDays} días naturales al año`], ['Periodo de prueba', `${contract.trialPeriod} días`], ['Pago habitual', `Día ${contract.paymentDay} de cada mes`]];
+    pdf.setFontSize(8.5);
+    rows.forEach(([label, value]) => { pdf.setFillColor(246, 249, 250).rect(left, y, 50, 9, 'F'); pdf.setDrawColor(218, 227, 232).rect(left, y, width, 9); pdf.setFont('helvetica', 'bold').text(label, left + 3, y + 6); pdf.setFont('helvetica', 'normal').text(value, left + 53, y + 6); y += 9; });
+    y += 9;
+    paragraph('No se acuerdan horas de presencia, pernoctas ni prestaciones salariales en especie. En lo no previsto se estará a la normativa vigente aplicable a la relación laboral especial del servicio del hogar familiar.');
+    y += 17;
+    pdf.setDrawColor(100, 115, 122).line(left, y, left + 65, y).line(left + 105, y, left + width, y);
+    pdf.setFontSize(8).text('Firma de la persona empleadora', left, y + 5).text('Firma de la persona trabajadora', left + 105, y + 5);
+    pdf.setFillColor(255, 247, 231).rect(left, 273, width, 10, 'F');
+    pdf.setFont('helvetica', 'bold').setTextColor(110, 91, 45).text('BORRADOR - Revisa el documento antes de firmarlo o presentarlo.', left + 4, 279);
+    pdf.save(`borrador-contrato-${contract.startDate}.pdf`);
+    notify('Borrador descargado en PDF');
   };
 
   return <main className={`shell print-${printDoc}`}>
