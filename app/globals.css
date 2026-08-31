@@ -51,6 +51,7 @@ button{cursor:pointer}
 .pay>p{font-size:12px;color:var(--muted);margin:0 0 6px}
 .pay>strong{display:block;font-size:29px;font-weight:730;letter-spacing:-.7px}
 .pay>small{font-size:10px;color:#8a9893}
+.monthly-amounts{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin:17px 0;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}.monthly-amounts>div{background:#fff;padding:14px}.pay.done .monthly-amounts>div{background:#f8fdff}.monthly-amounts span,.monthly-amounts strong{display:block}.monthly-amounts span{min-height:26px;font-size:9px;color:var(--muted);line-height:1.4}.monthly-amounts strong{margin-top:6px;font-size:18px}
 .actions{display:flex;gap:8px;margin-top:24px}
 .actions button,.tasks button,.doc button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:18px;padding:9px 15px;font-size:11px;font-weight:700}
 .actions .primary{border-color:var(--green);background:var(--green);color:#fff}
@@ -95,6 +96,7 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .contract-copy>span{font-size:8px;letter-spacing:1.1px;color:#d9f3ff;font-weight:800}.contract-copy h2{font-size:17px;margin:6px 0 5px}.contract-copy p{font-size:10px;color:#dbf2fc;margin:0}.contract-checks{display:flex;gap:14px;margin-top:12px}.contract-checks span{font-size:8px;color:#e7f8ff}
 .contract-actions{display:grid;gap:8px}.contract-actions button{border:1px solid #ffffff55;background:#ffffff12;color:#fff;border-radius:18px;padding:9px 14px;font-size:10px;font-weight:750}.contract-actions .primary{background:#fff;color:#087dbd}
 .contract-actions button:disabled{opacity:.5;cursor:not-allowed}
+.contract-actions{min-width:210px}
 .toast{position:fixed;right:24px;bottom:24px;background:#087dbd;color:#fff;padding:13px 18px;border-radius:14px;box-shadow:0 12px 30px #087dbd44;font-size:12px;z-index:20}
 .modal-backdrop{position:fixed;inset:0;background:#18313e73;backdrop-filter:blur(5px);display:grid;place-items:center;padding:22px;z-index:30;overflow-y:auto}
 .edit-modal{width:min(520px,100%);max-height:calc(100dvh - 44px);overflow-y:auto;background:#fff;border-radius:24px;padding:28px;box-shadow:0 30px 80px #102d3c4d}
@@ -130,6 +132,7 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .attendance-actions button.selected{border-color:#75bda4;background:#e7f7f1;color:#267255}
 .attendance-actions button.selected.sick{border-color:#e5a093;background:#fff0ed;color:#a34234}
 .attendance-actions button.selected.vacation{border-color:#9dbce0;background:#eaf2ff;color:#3769a1}
+.attendance-actions button:disabled{cursor:not-allowed;opacity:.55}.attendance-list article.locked{background:#f8fafb}.view-secondary{justify-self:end;border:1px solid #087dbd;background:#fff;color:#087dbd;border-radius:18px;padding:10px 17px;font-size:11px;font-weight:750}
 .month-selector{display:grid;grid-template-columns:auto minmax(160px,220px) 1fr auto;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 14px}
 .month-selector button{width:36px;height:36px;border:0;border-radius:50%;background:#edf7fc;color:#087dbd;font-size:24px}
 .month-selector label{font-size:0}
@@ -171,6 +174,7 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .attendance-list article{align-items:flex-start;flex-wrap:wrap}.attendance-actions{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}.attendance-actions button{padding-inline:7px}.month-selector{grid-template-columns:auto minmax(130px,1fr) auto;gap:9px}.month-selector>strong{display:flex;font-size:11px;white-space:nowrap}.attendance-day-number{width:40px;height:40px}.document-grid,.payroll-detail{grid-template-columns:1fr}.view-head{gap:14px}.source-badge{display:none}
 .annual-cards{grid-template-columns:1fr 1fr}.annual-cards .vacation-card{grid-column:1/-1}.annual-cards .remaining-card{grid-column:1/-1}.annual-table{overflow-x:auto}.annual-table-head,.annual-table-row{min-width:570px}
 .contract-card{grid-template-columns:auto 1fr;padding:20px}.contract-actions{grid-column:1/-1;grid-template-columns:1fr 1fr}.contract-checks{display:none}.review-grid{grid-template-columns:1fr}
+.monthly-amounts{grid-template-columns:1fr}.monthly-amounts span{min-height:0}.monthly-amounts>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.monthly-amounts strong{margin-top:0;font-size:16px}
 }
 
 @media print{body{background:#fff}
