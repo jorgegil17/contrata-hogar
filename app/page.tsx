@@ -106,9 +106,9 @@ export default function Home() {
     const left = 20;
     const width = 170;
     let y = 18;
-    const pageHeader = (page: number) => { if (page > 1) { pdf.addPage(); y = 18; } pdf.setTextColor(8, 125, 189).setFont('helvetica', 'bold').setFontSize(8).text('CONTRATA HOGAR · CONTRATO INDEFINIDO A TIEMPO PARCIAL', left, y); pdf.setFont('helvetica', 'normal').setTextColor(120, 137, 145).text(`Página ${page} de 3`, left + width, y, { align: 'right' }); y += 10; };
-    const heading = (title: string) => { pdf.setFont('helvetica', 'bold').setFontSize(12).setTextColor(23, 36, 43).text(title, left, y); y += 3; pdf.setDrawColor(204, 217, 223).line(left, y, left + width, y); y += 7; };
-    const paragraph = (text: string) => { pdf.setFont('helvetica', 'normal').setFontSize(8.7).setTextColor(45, 59, 66); const lines = pdf.splitTextToSize(text, width); pdf.text(lines, left, y); y += lines.length * 4.3 + 3; };
+    const pageHeader = (page: number) => { if (page > 1) { pdf.addPage(); y = 18; } pdf.setTextColor(8, 125, 189).setFont('helvetica', 'bold').setFontSize(8).text('CONTRATA HOGAR · CONTRATO INDEFINIDO A TIEMPO PARCIAL', left, y); pdf.setFont('helvetica', 'normal').setTextColor(120, 137, 145).text(`Página ${page} de 2`, left + width, y, { align: 'right' }); y += 9; };
+    const heading = (title: string) => { pdf.setFont('helvetica', 'bold').setFontSize(11).setTextColor(23, 36, 43).text(title, left, y); y += 2.5; pdf.setDrawColor(204, 217, 223).line(left, y, left + width, y); y += 6; };
+    const paragraph = (text: string) => { pdf.setFont('helvetica', 'normal').setFontSize(8.2).setTextColor(45, 59, 66); const lines = pdf.splitTextToSize(text, width); pdf.text(lines, left, y); y += lines.length * 3.9 + 2.5; };
     pageHeader(1);
     pdf.setTextColor(23, 36, 43).setFont('helvetica', 'bold').setFontSize(20).text('Contrato de trabajo indefinido', left, y);
     y += 8; pdf.setTextColor(8, 125, 189).setFontSize(15).text('a tiempo parcial', left, y);
@@ -127,11 +127,11 @@ export default function Home() {
     heading('Resumen de condiciones principales');
     const rows = [['Jornada', `${contract.weeklyHours} horas semanales`], ['Horario', scheduleText(contract.scheduleEntries)], ['Salario bruto mensual', euro(monthlySalary)], ['Salario bruto por hora', euro(contract.hourlyRate)], ['Pagas extraordinarias', 'Prorrateadas en 12 mensualidades'], ['Día habitual de pago', `Día ${contract.paymentDay}`]];
     pdf.setFontSize(8.5);
-    rows.forEach(([label, value]) => { pdf.setFillColor(246, 249, 250).rect(left, y, 50, 9, 'F'); pdf.setDrawColor(218, 227, 232).rect(left, y, width, 9); pdf.setFont('helvetica', 'bold').text(label, left + 3, y + 6); pdf.setFont('helvetica', 'normal').text(value, left + 53, y + 6); y += 9; });
+    rows.forEach(([label, value]) => { const valueLines = pdf.splitTextToSize(value, width - 56); const rowHeight = Math.max(8, valueLines.length * 3.5 + 3); pdf.setFillColor(246, 249, 250).rect(left, y, 50, rowHeight, 'F'); pdf.setDrawColor(218, 227, 232).rect(left, y, width, rowHeight); pdf.setFont('helvetica', 'bold').text(label, left + 3, y + 5.5); pdf.setFont('helvetica', 'normal').text(valueLines, left + 53, y + 5.5); y += rowHeight; });
 
-    pageHeader(2);
     heading('4. Jornada y horario');
     paragraph(`La jornada ordinaria será de ${contract.weeklyHours} horas semanales, distribuidas del siguiente modo: ${scheduleText(contract.scheduleEntries)}. Cualquier modificación permanente del horario deberá acordarse entre ambas partes. No se pactan tiempos de presencia, pernoctas ni disponibilidad fuera de las horas indicadas.`);
+    pageHeader(2);
     heading('5. Retribución');
     paragraph(`La persona trabajadora percibirá una retribución bruta de ${euro(monthlySalary)} mensuales, equivalente a ${euro(contract.hourlyRate)} brutos por hora para una jornada ordinaria de ${contract.weeklyHours} horas semanales, calculada sobre 52 semanas al año y prorrateada en 12 mensualidades.`);
     paragraph(`De la retribución bruta se deducirá la aportación a la Seguridad Social correspondiente a la persona trabajadora. La persona empleadora asumirá las cotizaciones a la Seguridad Social que legalmente le correspondan. El pago se realizará mensualmente mediante transferencia bancaria, habitualmente el día ${contract.paymentDay}, y se entregará el correspondiente recibo justificativo de salario.`);
@@ -142,7 +142,6 @@ export default function Home() {
     heading('8. Festivos y permisos');
     paragraph('La persona trabajadora tendrá derecho a los festivos, permisos y descansos establecidos en la legislación laboral vigente y en la normativa específica del servicio del hogar familiar. Si un día ordinario de trabajo coincide con festivo, se aplicará lo previsto en la normativa vigente.');
 
-    pageHeader(3);
     heading('9. Seguridad Social');
     paragraph('La persona empleadora dará de alta a la persona trabajadora en el Sistema Especial para Empleados de Hogar del Régimen General de la Seguridad Social. La fecha de efectos del alta coincidirá con la fecha de inicio del contrato. La cotización se realizará conforme a la normativa vigente; la parte correspondiente a la persona trabajadora será deducida de su retribución bruta y la parte correspondiente a la persona empleadora será asumida por esta.');
     heading('10. Prevención y condiciones de trabajo');
