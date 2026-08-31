@@ -80,7 +80,7 @@ function seniority(value: string) {
 }
 
 export default function Home() {
-  const [activeView, setActiveView] = useState<'home' | 'attendance' | 'payroll' | 'person' | 'documents'>('home');
+  const [activeView, setActiveView] = useState<'home' | 'attendance' | 'payroll' | 'annual' | 'documents'>('home');
   const [contract, setContract] = useState<Contract>(defaults);
   const [draft, setDraft] = useState<Contract>(defaults);
   const [contractWizard, setContractWizard] = useState(false);
@@ -89,6 +89,8 @@ export default function Home() {
   const [attendanceConfirmed, setAttendanceConfirmed] = useState(false);
   const [attendanceMonth, setAttendanceMonth] = useState('2026-08');
   const [attendanceStatus, setAttendanceStatus] = useState<Record<string, 'scheduled' | 'completed' | 'sick' | 'vacation'>>({});
+  const [attendanceLoaded, setAttendanceLoaded] = useState(false);
+  const [annualYear, setAnnualYear] = useState(2026);
   const [payrollPrepared, setPayrollPrepared] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -97,7 +99,16 @@ export default function Home() {
     if (saved) {
       try { const parsed = { ...defaults, ...JSON.parse(saved) } as Contract; setContract(parsed); setDraft(parsed); } catch { /* ignore invalid local data */ }
     }
+    const savedAttendance = window.localStorage.getItem('contrata-hogar-attendance');
+    if (savedAttendance) {
+      try { setAttendanceStatus(JSON.parse(savedAttendance)); } catch { /* ignore invalid local data */ }
+    }
+    setAttendanceLoaded(true);
   }, []);
+
+  useEffect(() => {
+    if (attendanceLoaded) window.localStorage.setItem('contrata-hogar-attendance', JSON.stringify(attendanceStatus));
+  }, [attendanceLoaded, attendanceStatus]);
 
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
   const contributions = useMemo(() => socialSecurity2026(salary), [salary]);
@@ -110,6 +121,23 @@ export default function Home() {
   const contractReady = Boolean(partiesComplete && contract.workAddress && contract.signaturePlace && contract.signatureDate && contract.scheduleEntries?.length && Math.abs(contractScheduleHours - contract.weeklyHours) < .01);
   const attendanceDays = useMemo(() => monthWorkdays(attendanceMonth, contract.scheduleEntries || [], contract.startDate), [attendanceMonth, contract.scheduleEntries, contract.startDate]);
   const completedAttendanceDays = attendanceDays.filter(day => attendanceStatus[day.key] && attendanceStatus[day.key] !== 'scheduled').length;
+  const annualMonths = useMemo(() => Array.from({ length: 12 }, (_, index) => {
+    const month = `${annualYear}-${String(index + 1).padStart(2, '0')}`;
+    const days = monthWorkdays(month, contract.scheduleEntries || [], contract.startDate);
+    return {
+      month,
+      label: new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(annualYear, index, 1)),
+      planned: days.length,
+      worked: days.filter(day => attendanceStatus[day.key] === 'completed').length,
+      sick: days.filter(day => attendanceStatus[day.key] === 'sick').length,
+      vacation: days.filter(day => attendanceStatus[day.key] === 'vacation').length,
+    };
+  }), [annualYear, attendanceStatus, contract.scheduleEntries, contract.startDate]);
+  const annualTotals = annualMonths.reduce((total, month) => ({ planned: total.planned + month.planned, worked: total.worked + month.worked, sick: total.sick + month.sick, vacation: total.vacation + month.vacation }), { planned: 0, worked: 0, sick: 0, vacation: 0 });
+  const contractualDaysPerWeek = Math.max(1, new Set((contract.scheduleEntries || []).map(entry => entry.day)).size);
+  const naturalDaysPerVacationShift = 7 / contractualDaysPerWeek;
+  const vacationNaturalDays = cents(annualTotals.vacation * naturalDaysPerVacationShift);
+  const vacationRemaining = Math.max(0, cents(contract.vacationDays - vacationNaturalDays));
   const moveAttendanceMonth = (offset: number) => {
     const [year, month] = attendanceMonth.split('-').map(Number);
     const next = new Date(year, month - 1 + offset, 1);
@@ -264,12 +292,12 @@ export default function Home() {
   return <main className="shell">
     <aside className="sidebar">
       <a className="brand" href="#top" aria-label="Contrata Hogar, inicio"><b>C</b><span>Contrata Hogar</span></a>
-      <nav><button aria-label="Inicio" title="Inicio" className={activeView === 'home' ? 'active' : ''} onClick={() => setActiveView('home')}><i>⌂</i><span>Inicio</span></button><button aria-label="Asistencia" title="Asistencia" className={activeView === 'attendance' ? 'active' : ''} onClick={() => setActiveView('attendance')}><i>✓</i><span>Asistencia</span></button><button aria-label="Nóminas" title="Nóminas" className={activeView === 'payroll' ? 'active' : ''} onClick={() => setActiveView('payroll')}><i>€</i><span>Nóminas</span></button><button aria-label="Persona y contrato" title="Persona y contrato" className={activeView === 'person' ? 'active' : ''} onClick={() => setActiveView('person')}><i>♙</i><span>Persona y contrato</span></button><button aria-label="Documentos" title="Documentos" className={activeView === 'documents' ? 'active' : ''} onClick={() => setActiveView('documents')}><i>▤</i><span>Documentos</span></button></nav>
+      <nav><button aria-label="Inicio" title="Inicio" className={activeView === 'home' ? 'active' : ''} onClick={() => setActiveView('home')}><i>⌂</i><span>Inicio</span></button><button aria-label="Asistencia" title="Asistencia" className={activeView === 'attendance' ? 'active' : ''} onClick={() => setActiveView('attendance')}><i>✓</i><span>Asistencia</span></button><button aria-label="Nóminas" title="Nóminas" className={activeView === 'payroll' ? 'active' : ''} onClick={() => setActiveView('payroll')}><i>€</i><span>Nóminas</span></button><button aria-label="Resumen anual" title="Resumen anual" className={activeView === 'annual' ? 'active' : ''} onClick={() => setActiveView('annual')}><i>◫</i><span>Resumen anual</span></button><button aria-label="Documentos" title="Documentos" className={activeView === 'documents' ? 'active' : ''} onClick={() => setActiveView('documents')}><i>▤</i><span>Documentos</span></button></nav>
       <div className="sidebottom"><a href="#ajustes"><i>⚙</i><span>Ajustes</span></a><div className="profile"><b>{contract.employerName ? contract.employerName.slice(0, 2).toUpperCase() : 'EM'}</b><p>{contract.employerName || 'Empleador'}<small>Empleador</small></p></div></div>
     </aside>
 
     <section className="workspace" id="top">
-      <header><div><small>DOMINGO, 30 DE AGOSTO</small><h1>{activeView === 'home' ? 'Buenos días, Jorge' : activeView === 'attendance' ? 'Asistencia' : activeView === 'payroll' ? 'Nóminas' : activeView === 'person' ? 'Persona y contrato' : 'Documentos'}</h1></div><button className="help" onClick={() => notify('Centro de ayuda: disponible en la siguiente versión')}>ⓘ Ayuda</button></header>
+      <header><div><small>DOMINGO, 30 DE AGOSTO</small><h1>{activeView === 'home' ? 'Buenos días, Jorge' : activeView === 'attendance' ? 'Asistencia' : activeView === 'payroll' ? 'Nóminas' : activeView === 'annual' ? 'Resumen anual' : 'Documentos'}</h1></div><button className="help" onClick={() => notify('Centro de ayuda: disponible en la siguiente versión')}>ⓘ Ayuda</button></header>
       <div className="content">
         {activeView === 'home' && <>
         <section className="hero"><div><label><i /> RELACIÓN LABORAL ACTIVA</label><h2>{paid ? 'Nómina pagada' : attendanceConfirmed ? 'Prepara el pago del mes' : 'Revisa la asistencia'}</h2><p>{paid ? 'El recibo y el pago de agosto están registrados.' : attendanceConfirmed ? 'La asistencia está confirmada; ya puedes preparar la nómina.' : 'Confirma las jornadas antes de preparar la nómina.'}</p></div><div className="next"><span>Próxima acción</span><b>{paid ? 'LISTO' : attendanceConfirmed ? 'NÓMINA' : 'ASISTENCIA'}</b><small>{paid ? 'Mes cerrado' : 'Pendiente'}</small></div></section>
@@ -291,7 +319,7 @@ export default function Home() {
 
         {activeView === 'payroll' && <section className="app-view"><div className="view-head"><div><span>AGOSTO 2026</span><h2>Nómina mensual</h2><p>Revisa el cálculo, genera el recibo y registra la transferencia.</p></div><span className={`status-pill ${paid ? 'ok' : ''}`}>{paid ? 'Pagada' : payrollPrepared ? 'Pendiente de pago' : 'Sin preparar'}</span></div><div className="payroll-flow"><div className={attendanceConfirmed ? 'done' : ''}><b>1</b><p><strong>Asistencia</strong><small>{attendanceConfirmed ? 'Mes confirmado' : 'Pendiente de confirmar'}</small></p></div><div className={payrollPrepared ? 'done' : ''}><b>2</b><p><strong>Preparar nómina</strong><small>{euro(salary)} brutos</small></p><button disabled={!attendanceConfirmed || payrollPrepared} onClick={() => setPayrollPrepared(true)}>Preparar</button></div><div className={paid ? 'done' : ''}><b>3</b><p><strong>Transferencia</strong><small>{euro(net)} netos estimados</small></p><button disabled={!payrollPrepared || paid} onClick={() => setPaid(true)}>Marcar pagada</button></div></div><div className="payroll-detail"><div><span>Salario bruto</span><strong>{euro(salary)}</strong></div><div><span>Deducción trabajadora</span><strong>- {euro(deduction)}</strong></div><div className="net"><span>Neto a transferir</span><strong>{euro(net)}</strong></div><div><span>Cargo Seguridad Social</span><strong>{euro(contributions.directDebit)}</strong></div><div><span>Coste total</span><strong>{euro(contributions.totalCost)}</strong></div></div><button className="view-primary" disabled={!payrollPrepared} onClick={generateReceipt}>Generar recibo PDF</button></section>}
 
-        {activeView === 'person' && <section className="app-view"><Title title="Ficha de la persona trabajadora" /><article className="person"><div className="personhead"><b>{contract.employeeName ? contract.employeeName.slice(0,2).toUpperCase() : 'TR'}</b><p><strong>{contract.employeeName || 'Persona trabajadora'}</strong><small>Ficha informativa · Contrato activo</small></p><span className="source-badge">Datos del contrato</span></div><dl><div><dt>Antigüedad</dt><dd>{seniority(contract.startDate)}<small>Inicio: {formatDate(contract.startDate)}</small></dd></div><div><dt>Jornada</dt><dd>{contract.weeklyHours} h / semana<small>{scheduleText(contract.scheduleEntries)}</small></dd></div><div><dt>Salario por hora</dt><dd>{euro(contract.hourlyRate)}<small>{euro(salary)} brutos/mes</small></dd></div></dl></article><section className="contract-card"><div className="contract-icon">▧</div><div className="contract-copy"><span>CONTRATO ACTIVO</span><h2>Indefinido · Tiempo parcial</h2><p>Fuente única de las condiciones laborales</p></div><div className="contract-actions"><button onClick={openContractWizard}>Revisar contrato</button><button className="primary" disabled={!contractReady} onClick={generateContract}>Descargar PDF</button></div></section></section>}
+        {activeView === 'annual' && <section className="app-view annual-view"><div className="view-head"><div><span>PLANIFICACIÓN</span><h2>Resumen anual</h2><p>Vista consolidada de asistencia, bajas y vacaciones registradas.</p></div><div className="year-selector"><button aria-label="Año anterior" onClick={() => setAnnualYear(annualYear - 1)}>‹</button><strong>{annualYear}</strong><button aria-label="Año siguiente" onClick={() => setAnnualYear(annualYear + 1)}>›</button></div></div><div className="annual-cards"><article><span>Jornadas previstas</span><strong>{annualTotals.planned}</strong><small>Según el contrato</small></article><article><span>Jornadas trabajadas</span><strong>{annualTotals.worked}</strong><small>Confirmadas</small></article><article><span>Bajas</span><strong>{annualTotals.sick}</strong><small>Jornadas registradas</small></article><article className="vacation-card"><span>Vacaciones disfrutadas</span><strong>{vacationNaturalDays.toLocaleString('es-ES')} días</strong><small>{annualTotals.vacation} jornadas × {naturalDaysPerVacationShift.toLocaleString('es-ES')} días naturales</small></article><article className="remaining-card"><span>Saldo de vacaciones</span><strong>{vacationRemaining.toLocaleString('es-ES')} días</strong><small>De {contract.vacationDays} días naturales anuales</small></article></div><div className="vacation-explanation"><b>Cómo se calcula el saldo</b><p>El contrato distribuye la jornada en {contractualDaysPerWeek} días por semana. Por eso, cada jornada marcada como vacaciones consume {naturalDaysPerVacationShift.toLocaleString('es-ES')} días naturales: una semana completa equivale siempre a 7 días naturales.</p></div><div className="annual-table"><div className="annual-table-head"><span>Mes</span><span>Previstas</span><span>Trabajadas</span><span>Bajas</span><span>Vacaciones</span></div>{annualMonths.map(month => <div className="annual-table-row" key={month.month}><strong>{month.label}</strong><span>{month.planned}</span><span>{month.worked}</span><span>{month.sick}</span><span>{month.vacation ? `${month.vacation} (${cents(month.vacation * naturalDaysPerVacationShift).toLocaleString('es-ES')} naturales)` : '0'}</span></div>)}</div></section>}
 
         {activeView === 'documents' && <section className="app-view"><div className="view-head"><div><span>ARCHIVO</span><h2>Documentos</h2><p>Contrato, recibos salariales y documentos internos, siempre separados.</p></div></div><div className="document-grid"><article><b>PDF</b><h3>Contrato vigente</h3><p>Contrato indefinido a tiempo parcial.</p><button disabled={!contractReady} onClick={generateContract}>Descargar</button></article><article><b>PDF</b><h3>Recibo de agosto 2026</h3><p>{paid ? 'Pagado' : payrollPrepared ? 'Pendiente de pago' : 'Todavía no preparado'}</p><button disabled={!payrollPrepared} onClick={generateReceipt}>Descargar</button></article><article><b>PDF</b><h3>Ficha interna</h3><p>Estimaciones y registros de gestión.</p><button onClick={generateManagementSheet}>Descargar</button></article></div></section>}
       </div>
