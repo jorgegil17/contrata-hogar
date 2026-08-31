@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { jsPDF } from 'jspdf';
 
+type ScheduleEntry = { day: string; start: string; end: string };
 type Contract = {
   startDate: string;
   weeklyHours: number;
@@ -11,6 +12,7 @@ type Contract = {
   workDays: string;
   workAddress: string;
   schedule: string;
+  scheduleEntries: ScheduleEntry[];
   paymentDay: number;
   extraPays: 'prorated' | 'separate';
   trialPeriod: number;
@@ -26,8 +28,10 @@ type Contract = {
   employeeNss: string;
   employeeAddress: string;
 };
-const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 12, hourlyRate: 10, workDays: 'Lunes, miércoles y viernes', workAddress: '', schedule: 'Lunes, miércoles y viernes, de 10:00 a 14:00', paymentDay: 31, extraPays: 'prorated', trialPeriod: 0, hasTrialPeriod: false, vacationDays: 30, signaturePlace: '', signatureDate: new Date().toISOString().slice(0, 10), employerName: '', employerDni: '', employerAddress: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '' };
+const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 12, hourlyRate: 10, workDays: 'Lunes, miércoles y viernes', workAddress: '', schedule: '', scheduleEntries: [{ day: 'Lunes', start: '10:00', end: '14:00' }, { day: 'Miércoles', start: '10:00', end: '14:00' }, { day: 'Viernes', start: '10:00', end: '14:00' }], paymentDay: 31, extraPays: 'prorated', trialPeriod: 0, hasTrialPeriod: false, vacationDays: 30, signaturePlace: '', signatureDate: '', employerName: '', employerDni: '', employerAddress: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '' };
 const euro = (n: number) => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const scheduleHours = (entries: ScheduleEntry[]) => entries.reduce((total, entry) => { const [startHour, startMinute] = entry.start.split(':').map(Number); const [endHour, endMinute] = entry.end.split(':').map(Number); const minutes = endHour * 60 + endMinute - startHour * 60 - startMinute; return total + (minutes > 0 ? minutes / 60 : 0); }, 0);
+const scheduleText = (entries: ScheduleEntry[]) => entries.map(entry => `${entry.day}, de ${entry.start} a ${entry.end}`).join('; ');
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -69,9 +73,16 @@ export default function Home() {
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
   const deduction = useMemo(() => +(salary * .0637).toFixed(2), [salary]);
   const net = salary - deduction;
+  const contractScheduleHours = scheduleHours(contract.scheduleEntries || []);
+  const draftScheduleHours = scheduleHours(draft.scheduleEntries || []);
+  const draftHoursMatch = Math.abs(draftScheduleHours - draft.weeklyHours) < .01;
   const partiesComplete = Boolean(contract.employerName && contract.employerDni && contract.employerAddress && contract.employeeName && contract.employeeDni && contract.employeeNss && contract.employeeAddress);
+  const contractReady = Boolean(partiesComplete && contract.workAddress && contract.signaturePlace && contract.signatureDate && contract.scheduleEntries?.length && Math.abs(contractScheduleHours - contract.weeklyHours) < .01);
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
   const openEditor = () => { setDraft(contract); setEditing(true); };
+  const updateSchedule = (index: number, update: Partial<ScheduleEntry>) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...update } : entry) });
+  const addSchedule = () => setDraft({ ...draft, scheduleEntries: [...draft.scheduleEntries, { day: 'Lunes', start: '10:00', end: '13:00' }] });
+  const removeSchedule = (index: number) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.filter((_, entryIndex) => entryIndex !== index) });
   const saveContract = () => {
     if (!draft.startDate || draft.weeklyHours <= 0 || draft.hourlyRate <= 0) return;
     setContract(draft);
@@ -81,7 +92,7 @@ export default function Home() {
   };
   const openContractWizard = () => { setDraft(contract); setWizardStep(1); setContractWizard(true); };
   const saveWizard = () => {
-    if (!draft.startDate || draft.weeklyHours <= 0 || draft.hourlyRate <= 0 || !draft.workDays.trim() || !draft.workAddress.trim() || !draft.schedule.trim() || !draft.signaturePlace.trim() || !draft.signatureDate || !draft.employerName || !draft.employerDni || !draft.employerAddress || !draft.employeeName || !draft.employeeDni || !draft.employeeNss || !draft.employeeAddress) { notify('Completa todos los datos necesarios del contrato'); return; }
+    if (!draft.startDate || draft.weeklyHours <= 0 || draft.hourlyRate <= 0 || !draft.workAddress.trim() || !draft.scheduleEntries.length || !draftHoursMatch || !draft.signaturePlace.trim() || !draft.signatureDate || !draft.employerName || !draft.employerDni || !draft.employerAddress || !draft.employeeName || !draft.employeeDni || !draft.employeeNss || !draft.employeeAddress) { notify(draftHoursMatch ? 'Completa todos los datos necesarios del contrato' : 'El horario debe sumar exactamente las horas semanales pactadas'); return; }
     setContract(draft);
     window.localStorage.setItem('contrata-hogar-contract', JSON.stringify(draft));
     setContractWizard(false);
@@ -89,7 +100,7 @@ export default function Home() {
   };
   const print = (document: 'payroll' | 'contract') => { flushSync(() => setPrintDoc(document)); window.print(); };
   const generateContract = () => {
-    if (!partiesComplete || !contract.workAddress || !contract.schedule || !contract.signaturePlace || !contract.signatureDate) { openContractWizard(); notify('Completa primero todos los datos del contrato'); return; }
+    if (!contractReady) { openContractWizard(); notify(Math.abs(contractScheduleHours - contract.weeklyHours) < .01 ? 'El documento está incompleto: revisa los datos obligatorios' : `El horario suma ${contractScheduleHours.toLocaleString('es-ES')} h y la jornada pactada es de ${contract.weeklyHours.toLocaleString('es-ES')} h`); return; }
     const monthlySalary = +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2);
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
     const left = 20;
@@ -114,20 +125,20 @@ export default function Home() {
     heading('3. Duración');
     paragraph(`El contrato se concierta por tiempo indefinido y comenzará el ${formatDate(contract.startDate)}. ${contract.hasTrialPeriod ? `Se establece por escrito un periodo de prueba de ${contract.trialPeriod} días.` : 'No se establece periodo de prueba.'}`);
     heading('Resumen de condiciones principales');
-    const rows = [['Jornada', `${contract.weeklyHours} horas semanales`], ['Horario', contract.schedule], ['Salario bruto mensual', euro(monthlySalary)], ['Salario bruto por hora', euro(contract.hourlyRate)], ['Pagas extraordinarias', 'Prorrateadas en 12 mensualidades'], ['Día habitual de pago', `Día ${contract.paymentDay}`]];
+    const rows = [['Jornada', `${contract.weeklyHours} horas semanales`], ['Horario', scheduleText(contract.scheduleEntries)], ['Salario bruto mensual', euro(monthlySalary)], ['Salario bruto por hora', euro(contract.hourlyRate)], ['Pagas extraordinarias', 'Prorrateadas en 12 mensualidades'], ['Día habitual de pago', `Día ${contract.paymentDay}`]];
     pdf.setFontSize(8.5);
     rows.forEach(([label, value]) => { pdf.setFillColor(246, 249, 250).rect(left, y, 50, 9, 'F'); pdf.setDrawColor(218, 227, 232).rect(left, y, width, 9); pdf.setFont('helvetica', 'bold').text(label, left + 3, y + 6); pdf.setFont('helvetica', 'normal').text(value, left + 53, y + 6); y += 9; });
 
     pageHeader(2);
     heading('4. Jornada y horario');
-    paragraph(`La jornada ordinaria será de ${contract.weeklyHours} horas semanales, distribuidas del siguiente modo: ${contract.schedule}. Cualquier modificación permanente del horario deberá acordarse entre ambas partes. No se pactan tiempos de presencia, pernoctas ni disponibilidad fuera de las horas indicadas.`);
+    paragraph(`La jornada ordinaria será de ${contract.weeklyHours} horas semanales, distribuidas del siguiente modo: ${scheduleText(contract.scheduleEntries)}. Cualquier modificación permanente del horario deberá acordarse entre ambas partes. No se pactan tiempos de presencia, pernoctas ni disponibilidad fuera de las horas indicadas.`);
     heading('5. Retribución');
     paragraph(`La persona trabajadora percibirá una retribución bruta de ${euro(monthlySalary)} mensuales, equivalente a ${euro(contract.hourlyRate)} brutos por hora para una jornada ordinaria de ${contract.weeklyHours} horas semanales, calculada sobre 52 semanas al año y prorrateada en 12 mensualidades.`);
     paragraph(`De la retribución bruta se deducirá la aportación a la Seguridad Social correspondiente a la persona trabajadora. La persona empleadora asumirá las cotizaciones a la Seguridad Social que legalmente le correspondan. El pago se realizará mensualmente mediante transferencia bancaria, habitualmente el día ${contract.paymentDay}, y se entregará el correspondiente recibo justificativo de salario.`);
     heading('6. Pagas extraordinarias');
     paragraph('Las partes acuerdan que las pagas extraordinarias legalmente previstas quedan prorrateadas en las 12 mensualidades.');
     heading('7. Vacaciones');
-    paragraph('La persona trabajadora tendrá derecho a 30 días naturales de vacaciones por cada año completo trabajado, o a la parte proporcional si el periodo trabajado es inferior al año. Las fechas se fijarán de común acuerdo entre las partes y las vacaciones serán retribuidas conforme a la jornada y salario ordinarios pactados. Se recomienda dejar las fechas acordadas por escrito, incluido mediante correo electrónico o mensajería.');
+    paragraph('La persona trabajadora tendrá derecho a 30 días naturales de vacaciones por cada año completo trabajado, o a la parte proporcional si el periodo trabajado es inferior al año. Las fechas de vacaciones se fijarán de común acuerdo entre las partes y se dejará constancia por escrito. Las vacaciones serán retribuidas conforme a la jornada y salario ordinarios pactados.');
     heading('8. Festivos y permisos');
     paragraph('La persona trabajadora tendrá derecho a los festivos, permisos y descansos establecidos en la legislación laboral vigente y en la normativa específica del servicio del hogar familiar. Si un día ordinario de trabajo coincide con festivo, se aplicará lo previsto en la normativa vigente.');
 
@@ -160,11 +171,13 @@ export default function Home() {
     pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(95, 117, 128).text('No forma parte del contrato firmado', 20, 39);
     let y = 52;
     rows.forEach(([label, value]) => { pdf.setFillColor(246, 249, 250).rect(20, y, 65, 10, 'F'); pdf.setDrawColor(218, 227, 232).rect(20, y, 170, 10); pdf.setFont('helvetica', 'bold').setTextColor(45, 59, 66).text(label, 24, y + 6.5); pdf.setFont('helvetica', 'normal').text(value, 90, y + 6.5); y += 10; });
+    pdf.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(110, 125, 132).text('Las cotizaciones son estimaciones orientativas y deben comprobarse con los datos vigentes de la Seguridad Social.', 20, 145);
+    pdf.addPage(); y = 20; pdf.setTextColor(8, 125, 189).setFont('helvetica', 'bold').setFontSize(9).text('CONTRATA HOGAR · REGISTROS INTERNOS', 20, y);
     const register = (title: string, columns: string[]) => { y += 10; pdf.setFont('helvetica', 'bold').setFontSize(12).setTextColor(23, 36, 43).text(title, 20, y); y += 5; const columnWidth = 170 / columns.length; columns.forEach((column, index) => { pdf.setFillColor(234, 247, 253).rect(20 + index * columnWidth, y, columnWidth, 9, 'F'); pdf.setFontSize(8).text(column, 23 + index * columnWidth, y + 6); }); y += 9; for (let row = 0; row < 3; row++) { pdf.setDrawColor(218, 227, 232).rect(20, y, 170, 10); y += 10; } };
-    register('Registro de pagos mensuales', ['Mes', 'Importe', 'Fecha', 'Estado']);
+    register('Pagos mensuales', ['Mes', 'Importe', 'Fecha', 'Estado']);
+    register('Recibos de salario', ['Periodo', 'Fecha', 'Documento']);
     register('Vacaciones y festivos', ['Fecha / periodo', 'Tipo', 'Acuerdo / situación']);
     register('Documentos asociados', ['Documento', 'Fecha', 'Observaciones']);
-    pdf.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(110, 125, 132).text('Las cotizaciones son estimaciones orientativas y deben comprobarse con los datos vigentes de la Seguridad Social.', 20, 286);
     pdf.save(`ficha-interna-${contract.startDate}.pdf`);
     notify('Ficha interna descargada en PDF');
   };
@@ -188,9 +201,9 @@ export default function Home() {
             <dl><div><dt>Antigüedad</dt><dd>{seniority(contract.startDate)}<small>Inicio: {formatDate(contract.startDate)}</small></dd></div><div><dt>Jornada</dt><dd>{contract.weeklyHours.toLocaleString('es-ES')} h / semana<small>Horario acordado</small></dd></div><div><dt>Salario por hora</dt><dd>{euro(contract.hourlyRate)}<small>{euro(salary)} brutos / mes estimados</small></dd></div></dl>
           </article>
         </div>
-        <section className="contract-card" id="contrato"><div className="contract-icon">▧</div><div className="contract-copy"><span>CONTRATO Y GESTIÓN</span><h2>Contrato indefinido · Tiempo parcial</h2><p>{contract.weeklyHours.toLocaleString('es-ES')} horas semanales · {euro(contract.hourlyRate)}/hora · Inicio {formatDate(contract.startDate)}</p><div className="contract-checks"><span>{partiesComplete ? '✓ Datos de ambas partes completos' : '○ Faltan datos de las partes'}</span><span>⌁ Contrato y ficha interna separados</span></div></div><div className="contract-actions"><button onClick={openContractWizard}>Completar contrato</button><button className="primary" onClick={generateContract}>Generar contrato PDF</button><button onClick={generateManagementSheet}>Ficha interna PDF</button></div></section>
+        <section className="contract-card" id="contrato"><div className="contract-icon">▧</div><div className="contract-copy"><span>{contractReady ? 'LISTO PARA REVISAR Y FIRMAR' : 'BORRADOR INCOMPLETO'}</span><h2>Contrato indefinido · Tiempo parcial</h2><p>{contract.weeklyHours.toLocaleString('es-ES')} horas semanales · {euro(contract.hourlyRate)}/hora · {euro(salary)} brutos/mes</p><div className="contract-checks"><span>{partiesComplete ? '✓ Datos de ambas partes completos' : '○ Faltan datos obligatorios'}</span><span>{Math.abs(contractScheduleHours - contract.weeklyHours) < .01 ? '✓ Horario y jornada coinciden' : `○ El horario suma ${contractScheduleHours.toLocaleString('es-ES')} h`}</span></div></div><div className="contract-actions"><button onClick={openContractWizard}>Completar contrato</button><button className="primary" disabled={!contractReady} title={contractReady ? 'Descargar contrato' : 'Completa los datos y corrige el horario'} onClick={generateContract}>Generar contrato PDF</button><button onClick={generateManagementSheet}>Ficha interna PDF</button></div></section>
         <Title title="Próximas tareas" note="2 pendientes" />
-        <section className="tasks" id="tareas"><Task day="31" month="AGO" title="Pagar nómina de agosto" detail={`Transferencia a María R. · ${euro(net)}`} onClick={() => notify('Recordatorio activado para mañana')} /><Task day="15" month="SEP" title="Revisar horas del mes" detail="Comprueba ausencias o cambios antes de cerrar la nómina." calm onClick={() => notify('Recordatorio activado para el 15 de septiembre')} /></section>
+        <section className="tasks" id="tareas"><Task day="31" month="AGO" title="Pagar nómina de agosto" detail={`Transferencia a ${contract.employeeName || 'la persona trabajadora'} · ${euro(net)}`} onClick={() => notify('Recordatorio activado para mañana')} /><Task day="15" month="SEP" title="Revisar horas del mes" detail="Comprueba ausencias o cambios antes de cerrar la nómina." calm onClick={() => notify('Recordatorio activado para el 15 de septiembre')} /></section>
         <section className="documents" id="docs"><Title title="Documentos recientes" action="Ver todos →" onClick={() => notify('No hay más documentos en esta prueba')} /><div className="doc"><b>PDF</b><p><strong>Recibo de salarios · Julio 2026</strong><small>Generado el 31 jul · Pagado</small></p><button onClick={() => notify('Documento de ejemplo')}>Descargar</button></div></section>
       </div>
     </section>
@@ -211,10 +224,10 @@ export default function Home() {
         <div className="modal-head"><div><span>PASO {wizardStep} DE 4</span><h2 id="contract-title">{wizardStep === 1 ? 'Datos de las partes' : wizardStep === 2 ? 'Jornada y salario' : wizardStep === 3 ? 'Condiciones del contrato' : 'Revisar borrador'}</h2></div><button aria-label="Cerrar" onClick={() => setContractWizard(false)}>×</button></div>
         <div className="steps four"><i className="done" /><i className={wizardStep >= 2 ? 'done' : ''} /><i className={wizardStep >= 3 ? 'done' : ''} /><i className={wizardStep >= 4 ? 'done' : ''} /></div>
         {wizardStep === 1 && <div className="wizard-fields"><h3>Persona empleadora</h3><div className="field-row"><label>Nombre y apellidos<input value={draft.employerName} onChange={e => setDraft({ ...draft, employerName: e.target.value })} /></label><label>DNI/NIE<input value={draft.employerDni} onChange={e => setDraft({ ...draft, employerDni: e.target.value })} /></label></div><label>Domicilio<input value={draft.employerAddress} onChange={e => setDraft({ ...draft, employerAddress: e.target.value })} /></label><h3>Persona trabajadora</h3><div className="field-row"><label>Nombre y apellidos<input value={draft.employeeName} onChange={e => setDraft({ ...draft, employeeName: e.target.value })} /></label><label>DNI/NIE<input value={draft.employeeDni} onChange={e => setDraft({ ...draft, employeeDni: e.target.value })} /></label></div><label>Número de la Seguridad Social<input value={draft.employeeNss} onChange={e => setDraft({ ...draft, employeeNss: e.target.value })} /></label><label>Domicilio<input value={draft.employeeAddress} onChange={e => setDraft({ ...draft, employeeAddress: e.target.value })} /></label><div className="privacy-note">Datos guardados solo en este navegador. No se envían a una base de datos.</div></div>}
-        {wizardStep === 2 && <div className="wizard-fields"><label>Fecha de inicio<input type="date" value={draft.startDate} onChange={e => setDraft({ ...draft, startDate: e.target.value })} /></label><div className="field-row"><label>Horas semanales<input type="number" min="0.5" max="40" step="0.5" value={draft.weeklyHours} onChange={e => setDraft({ ...draft, weeklyHours: Number(e.target.value) })} /></label><label>Salario bruto por hora (€)<input type="number" min="0.01" step="0.01" value={draft.hourlyRate} onChange={e => setDraft({ ...draft, hourlyRate: Number(e.target.value) })} /></label></div><label>Domicilio donde se presta el servicio<input type="text" value={draft.workAddress} onChange={e => setDraft({ ...draft, workAddress: e.target.value })} placeholder="Calle, número, localidad" /></label><label>Distribución detallada de días y horas<input type="text" value={draft.schedule} onChange={e => setDraft({ ...draft, schedule: e.target.value })} placeholder="Ej.: lunes y jueves, de 10:00 a 13:00" /></label><div className="estimate"><span>Salario bruto mensual</span><strong>{euro(draft.hourlyRate * draft.weeklyHours * 52 / 12)}</strong><small>Salario/hora × horas semanales × 52 ÷ 12</small></div></div>}
+        {wizardStep === 2 && <div className="wizard-fields"><label>Fecha de inicio<input type="date" value={draft.startDate} onChange={e => setDraft({ ...draft, startDate: e.target.value })} /></label><div className="field-row"><label>Horas semanales pactadas<input type="number" min="0.5" max="40" step="0.5" value={draft.weeklyHours} onChange={e => setDraft({ ...draft, weeklyHours: Number(e.target.value) })} /></label><label>Salario bruto por hora (€)<input type="number" min="0.01" step="0.01" value={draft.hourlyRate} onChange={e => setDraft({ ...draft, hourlyRate: Number(e.target.value) })} /></label></div><label>Domicilio donde se presta el servicio<input type="text" value={draft.workAddress} onChange={e => setDraft({ ...draft, workAddress: e.target.value })} placeholder="Calle, número, localidad" /></label><h3>Horario semanal</h3>{draft.scheduleEntries.map((entry, index) => <div className="schedule-row" key={`${index}-${entry.day}`}><select aria-label={`Día ${index + 1}`} value={entry.day} onChange={e => updateSchedule(index, { day: e.target.value })}>{['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map(day => <option key={day}>{day}</option>)}</select><input aria-label={`Hora de inicio ${index + 1}`} type="time" value={entry.start} onChange={e => updateSchedule(index, { start: e.target.value })} /><span>a</span><input aria-label={`Hora de fin ${index + 1}`} type="time" value={entry.end} onChange={e => updateSchedule(index, { end: e.target.value })} /><button type="button" aria-label={`Eliminar ${entry.day}`} onClick={() => removeSchedule(index)}>×</button></div>)}<button type="button" className="add-schedule" onClick={addSchedule}>+ Añadir otro día</button><div className={`schedule-total ${draftHoursMatch ? 'valid' : 'invalid'}`}><span>Horario calculado: <b>{draftScheduleHours.toLocaleString('es-ES')} h</b></span><span>Jornada pactada: <b>{draft.weeklyHours.toLocaleString('es-ES')} h</b></span><small>{draftHoursMatch ? '✓ Las horas coinciden' : 'El horario debe sumar exactamente la jornada pactada para continuar.'}</small></div><div className="estimate"><span>Salario bruto mensual</span><strong>{euro(draft.hourlyRate * draft.weeklyHours * 52 / 12)}</strong><small>Se recalcula automáticamente: salario/hora × horas semanales × 52 ÷ 12</small></div></div>}
         {wizardStep === 3 && <div className="wizard-fields"><div className="field-row"><label>Día habitual de pago<input type="number" min="1" max="31" value={draft.paymentDay} onChange={e => setDraft({ ...draft, paymentDay: Number(e.target.value) })} /></label><label>Periodo de prueba<select value={draft.hasTrialPeriod ? 'yes' : 'no'} onChange={e => setDraft({ ...draft, hasTrialPeriod: e.target.value === 'yes', trialPeriod: e.target.value === 'yes' ? Math.max(draft.trialPeriod, 1) : 0 })}><option value="no">No se establece</option><option value="yes">Sí se establece</option></select></label></div>{draft.hasTrialPeriod && <label>Duración del periodo de prueba (días)<input type="number" min="1" max="60" value={draft.trialPeriod} onChange={e => setDraft({ ...draft, trialPeriod: Number(e.target.value) })} /></label>}<label>Pagas extraordinarias<select value="prorated" disabled><option value="prorated">Prorrateadas en 12 mensualidades</option></select></label><div className="field-row"><label>Lugar de firma<input value={draft.signaturePlace} onChange={e => setDraft({ ...draft, signaturePlace: e.target.value })} placeholder="Ej.: Madrid" /></label><label>Fecha de firma<input type="date" value={draft.signatureDate} onChange={e => setDraft({ ...draft, signatureDate: e.target.value })} /></label></div><div className="info-box">Contrato indefinido a tiempo parcial, en régimen externo, sin pernocta ni tiempos de presencia. Si la relación ya existía, se recomienda no establecer un nuevo periodo de prueba.</div></div>}
         {wizardStep === 4 && <div className="review-grid"><div><span>Empleador</span><strong>{draft.employerName || 'Pendiente'}</strong></div><div><span>Persona trabajadora</span><strong>{draft.employeeName || 'Pendiente'}</strong></div><div><span>Fecha de inicio</span><strong>{formatDate(draft.startDate)}</strong></div><div><span>Jornada semanal</span><strong>{draft.weeklyHours} horas</strong></div><div><span>Salario bruto mensual</span><strong>{euro(draft.hourlyRate * draft.weeklyHours * 52 / 12)}</strong></div><div><span>Periodo de prueba</span><strong>{draft.hasTrialPeriod ? `${draft.trialPeriod} días` : 'No se establece'}</strong></div><p>Se generará un contrato de tres páginas. La ficha interna de gestión permanecerá separada y no formará parte del documento firmado.</p></div>}
-        <div className="modal-actions wizard-actions">{wizardStep > 1 ? <button onClick={() => setWizardStep(wizardStep - 1)}>Atrás</button> : <button onClick={() => setContractWizard(false)}>Cancelar</button>}<button className="primary" onClick={() => wizardStep < 4 ? setWizardStep(wizardStep + 1) : saveWizard()}>{wizardStep < 4 ? 'Continuar' : 'Guardar borrador'}</button></div>
+        <div className="modal-actions wizard-actions">{wizardStep > 1 ? <button onClick={() => setWizardStep(wizardStep - 1)}>Atrás</button> : <button onClick={() => setContractWizard(false)}>Cancelar</button>}<button className="primary" disabled={wizardStep === 2 && !draftHoursMatch} onClick={() => wizardStep < 4 ? setWizardStep(wizardStep + 1) : saveWizard()}>{wizardStep < 4 ? 'Continuar' : 'Guardar borrador'}</button></div>
       </section>
     </div>}
 
