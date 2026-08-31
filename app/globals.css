@@ -111,7 +111,10 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .modal-actions .primary{background:var(--green);border-color:var(--green);color:#fff}
 .contract-wizard{width:min(590px,100%)}
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:16px 0 23px}.steps i{height:4px;background:#e5edf1;border-radius:4px}.steps i.done{background:var(--green)}
+.steps.four{grid-template-columns:repeat(4,1fr)}
 .wizard-fields{display:grid;gap:16px}.wizard-fields>label{display:grid;gap:7px;font-size:11px;font-weight:700;color:#52636d}.info-box{font-size:10px;line-height:1.5;color:#526d7b;background:#eef8fc;border-radius:14px;padding:14px}
+.wizard-fields h3{font-size:11px;color:#087dbd;margin:4px 0 -6px;padding-bottom:7px;border-bottom:1px solid #e5edf1}
+.privacy-note{font-size:9px;line-height:1.45;color:#607782;background:#eef8fc;border-radius:12px;padding:11px 13px}
 .review-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.review-grid>div{border:1px solid var(--line);border-radius:13px;padding:12px}.review-grid span,.review-grid strong{display:block}.review-grid span{font-size:9px;color:var(--muted);margin-bottom:5px}.review-grid strong{font-size:11px}.review-grid>p{grid-column:1/-1;color:#6d7d85;background:#fff7e7;border-radius:12px;padding:12px;font-size:10px;line-height:1.5;margin:4px 0 0}
 .receipt,.contract-print{display:none}
 

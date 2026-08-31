@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 type Contract = {
   startDate: string;
@@ -11,8 +12,15 @@ type Contract = {
   extraPays: 'prorated' | 'separate';
   trialPeriod: number;
   vacationDays: number;
+  employerName: string;
+  employerDni: string;
+  employerAddress: string;
+  employeeName: string;
+  employeeDni: string;
+  employeeNss: string;
+  employeeAddress: string;
 };
-const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 12, hourlyRate: 10, workDays: 'Lunes, miércoles y viernes', paymentDay: 31, extraPays: 'prorated', trialPeriod: 30, vacationDays: 30 };
+const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 12, hourlyRate: 10, workDays: 'Lunes, miércoles y viernes', paymentDay: 31, extraPays: 'prorated', trialPeriod: 30, vacationDays: 30, employerName: '', employerDni: '', employerAddress: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '' };
 const euro = (n: number) => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 
 function formatDate(value: string) {
@@ -55,6 +63,7 @@ export default function Home() {
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
   const deduction = useMemo(() => +(salary * .0637).toFixed(2), [salary]);
   const net = salary - deduction;
+  const partiesComplete = Boolean(contract.employerName && contract.employerDni && contract.employerAddress && contract.employeeName && contract.employeeDni && contract.employeeNss && contract.employeeAddress);
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
   const openEditor = () => { setDraft(contract); setEditing(true); };
   const saveContract = () => {
@@ -66,19 +75,20 @@ export default function Home() {
   };
   const openContractWizard = () => { setDraft(contract); setWizardStep(1); setContractWizard(true); };
   const saveWizard = () => {
-    if (!draft.startDate || draft.weeklyHours <= 0 || draft.hourlyRate <= 0 || !draft.workDays.trim()) return;
+    if (!draft.startDate || draft.weeklyHours <= 0 || draft.hourlyRate <= 0 || !draft.workDays.trim() || !draft.employerName || !draft.employerDni || !draft.employerAddress || !draft.employeeName || !draft.employeeDni || !draft.employeeNss || !draft.employeeAddress) return;
     setContract(draft);
     window.localStorage.setItem('contrata-hogar-contract', JSON.stringify(draft));
     setContractWizard(false);
     notify('Borrador del contrato guardado en este dispositivo');
   };
-  const print = (document: 'payroll' | 'contract') => { setPrintDoc(document); window.setTimeout(() => window.print(), 80); };
+  const print = (document: 'payroll' | 'contract') => { flushSync(() => setPrintDoc(document)); window.print(); };
+  const generateContract = () => { if (!partiesComplete) { openContractWizard(); notify('Completa primero los datos de ambas partes'); return; } print('contract'); };
 
   return <main className={`shell print-${printDoc}`}>
     <aside className="sidebar">
       <a className="brand" href="#top" aria-label="Contrata Hogar, inicio"><b>C</b><span>Contrata Hogar</span></a>
       <nav><a className="active" href="#top"><i>⌂</i><span>Resumen</span></a><a href="#persona"><i>♙</i><span>Persona</span></a><a href="#contrato"><i>▧</i><span>Contrato</span></a><a href="#docs"><i>▤</i><span>Documentos</span></a><a href="#tareas"><i>□</i><span>Calendario</span></a></nav>
-      <div className="sidebottom"><a href="#ajustes"><i>⚙</i><span>Ajustes</span></a><div className="profile"><b>JM</b><p>Jorge M.<small>Empleador</small></p></div></div>
+      <div className="sidebottom"><a href="#ajustes"><i>⚙</i><span>Ajustes</span></a><div className="profile"><b>{contract.employerName ? contract.employerName.slice(0, 2).toUpperCase() : 'EM'}</b><p>{contract.employerName || 'Empleador'}<small>Empleador</small></p></div></div>
     </aside>
 
     <section className="workspace" id="top">
@@ -89,11 +99,11 @@ export default function Home() {
         <div className="month">
           <article className={'pay ' + (paid ? 'done' : '')}><div className="cardtop"><b>€</b><span>{paid ? 'PAGADA' : 'PENDIENTE'}</span></div><p>Nómina de agosto</p><strong>{euro(net)}</strong><small>Neto estimado a transferir</small><div className="actions"><button className="primary" disabled={paid} onClick={() => { setPaid(true); notify('Pago marcado como realizado'); }}>{paid ? 'Pago registrado' : 'Marcar como pagada'}</button><button onClick={() => print('payroll')}>Ver recibo</button></div></article>
           <article className="person" id="persona">
-            <div className="personhead"><b>MR</b><p><strong>María R.</strong><small>Empleada del hogar · Contrato indefinido</small></p><button className="edit-link" onClick={openEditor}>Editar datos</button></div>
+            <div className="personhead"><b>{contract.employeeName ? contract.employeeName.slice(0, 2).toUpperCase() : 'TR'}</b><p><strong>{contract.employeeName || 'Persona trabajadora'}</strong><small>Empleada del hogar · Contrato indefinido</small></p><button className="edit-link" onClick={openEditor}>Editar datos</button></div>
             <dl><div><dt>Antigüedad</dt><dd>{seniority(contract.startDate)}<small>Inicio: {formatDate(contract.startDate)}</small></dd></div><div><dt>Jornada</dt><dd>{contract.weeklyHours.toLocaleString('es-ES')} h / semana<small>Horario acordado</small></dd></div><div><dt>Salario por hora</dt><dd>{euro(contract.hourlyRate)}<small>{euro(salary)} brutos / mes estimados</small></dd></div></dl>
           </article>
         </div>
-        <section className="contract-card" id="contrato"><div className="contract-icon">▧</div><div className="contract-copy"><span>BORRADOR DE CONTRATO</span><h2>Contrato indefinido · Tiempo parcial</h2><p>{contract.weeklyHours.toLocaleString('es-ES')} horas semanales · {euro(contract.hourlyRate)}/hora · Inicio {formatDate(contract.startDate)}</p><div className="contract-checks"><span>✓ Condiciones básicas completas</span><span>⌁ Guardado en este navegador</span></div></div><div className="contract-actions"><button onClick={openContractWizard}>Revisar contrato</button><button className="primary" onClick={() => print('contract')}>Generar borrador</button></div></section>
+        <section className="contract-card" id="contrato"><div className="contract-icon">▧</div><div className="contract-copy"><span>BORRADOR DE CONTRATO</span><h2>Contrato indefinido · Tiempo parcial</h2><p>{contract.weeklyHours.toLocaleString('es-ES')} horas semanales · {euro(contract.hourlyRate)}/hora · Inicio {formatDate(contract.startDate)}</p><div className="contract-checks"><span>{partiesComplete ? '✓ Datos de ambas partes completos' : '○ Faltan datos de las partes'}</span><span>⌁ Guardado en este navegador</span></div></div><div className="contract-actions"><button onClick={openContractWizard}>Completar contrato</button><button className="primary" onClick={generateContract}>Generar borrador</button></div></section>
         <Title title="Próximas tareas" note="2 pendientes" />
         <section className="tasks" id="tareas"><Task day="31" month="AGO" title="Pagar nómina de agosto" detail={`Transferencia a María R. · ${euro(net)}`} onClick={() => notify('Recordatorio activado para mañana')} /><Task day="15" month="SEP" title="Revisar horas del mes" detail="Comprueba ausencias o cambios antes de cerrar la nómina." calm onClick={() => notify('Recordatorio activado para el 15 de septiembre')} /></section>
         <section className="documents" id="docs"><Title title="Documentos recientes" action="Ver todos →" onClick={() => notify('No hay más documentos en esta prueba')} /><div className="doc"><b>PDF</b><p><strong>Recibo de salarios · Julio 2026</strong><small>Generado el 31 jul · Pagado</small></p><button onClick={() => notify('Documento de ejemplo')}>Descargar</button></div></section>
@@ -113,24 +123,25 @@ export default function Home() {
 
     {contractWizard && <div className="modal-backdrop" role="presentation" onMouseDown={() => setContractWizard(false)}>
       <section className="edit-modal contract-wizard" role="dialog" aria-modal="true" aria-labelledby="contract-title" onMouseDown={e => e.stopPropagation()}>
-        <div className="modal-head"><div><span>PASO {wizardStep} DE 3</span><h2 id="contract-title">{wizardStep === 1 ? 'Jornada y salario' : wizardStep === 2 ? 'Condiciones del contrato' : 'Revisar borrador'}</h2></div><button aria-label="Cerrar" onClick={() => setContractWizard(false)}>×</button></div>
-        <div className="steps"><i className="done" /><i className={wizardStep >= 2 ? 'done' : ''} /><i className={wizardStep >= 3 ? 'done' : ''} /></div>
-        {wizardStep === 1 && <div className="wizard-fields"><label>Fecha de inicio<input type="date" value={draft.startDate} onChange={e => setDraft({ ...draft, startDate: e.target.value })} /></label><div className="field-row"><label>Horas semanales<input type="number" min="0.5" max="40" step="0.5" value={draft.weeklyHours} onChange={e => setDraft({ ...draft, weeklyHours: Number(e.target.value) })} /></label><label>Salario por hora (€)<input type="number" min="0.01" step="0.01" value={draft.hourlyRate} onChange={e => setDraft({ ...draft, hourlyRate: Number(e.target.value) })} /></label></div><label>Días de trabajo<input type="text" value={draft.workDays} onChange={e => setDraft({ ...draft, workDays: e.target.value })} /></label><div className="estimate"><span>Salario mensual estimado</span><strong>{euro(draft.hourlyRate * draft.weeklyHours * 52 / 12)}</strong><small>Estimación orientativa; debe validarse con la normativa aplicable.</small></div></div>}
-        {wizardStep === 2 && <div className="wizard-fields"><div className="field-row"><label>Día habitual de pago<input type="number" min="1" max="31" value={draft.paymentDay} onChange={e => setDraft({ ...draft, paymentDay: Number(e.target.value) })} /></label><label>Periodo de prueba (días)<input type="number" min="0" max="60" value={draft.trialPeriod} onChange={e => setDraft({ ...draft, trialPeriod: Number(e.target.value) })} /></label></div><label>Pagas extraordinarias<select value={draft.extraPays} onChange={e => setDraft({ ...draft, extraPays: e.target.value as Contract['extraPays'] })}><option value="prorated">Prorrateadas en 12 mensualidades</option><option value="separate">Dos pagas separadas</option></select></label><label>Vacaciones anuales<input type="number" min="30" value={draft.vacationDays} onChange={e => setDraft({ ...draft, vacationDays: Number(e.target.value) })} /></label><div className="info-box">El borrador asumirá contrato indefinido a tiempo parcial, sin pernoctas, salario en especie ni horas de presencia.</div></div>}
-        {wizardStep === 3 && <div className="review-grid"><div><span>Fecha de inicio</span><strong>{formatDate(draft.startDate)}</strong></div><div><span>Jornada semanal</span><strong>{draft.weeklyHours} horas</strong></div><div><span>Distribución</span><strong>{draft.workDays}</strong></div><div><span>Salario por hora</span><strong>{euro(draft.hourlyRate)}</strong></div><div><span>Pagas extra</span><strong>{draft.extraPays === 'prorated' ? 'Prorrateadas' : 'Dos separadas'}</strong></div><div><span>Vacaciones</span><strong>{draft.vacationDays} días</strong></div><p>Este documento será un borrador basado en los datos indicados. Revísalo antes de firmarlo o presentarlo.</p></div>}
-        <div className="modal-actions wizard-actions">{wizardStep > 1 ? <button onClick={() => setWizardStep(wizardStep - 1)}>Atrás</button> : <button onClick={() => setContractWizard(false)}>Cancelar</button>}<button className="primary" onClick={() => wizardStep < 3 ? setWizardStep(wizardStep + 1) : saveWizard()}>{wizardStep < 3 ? 'Continuar' : 'Guardar borrador'}</button></div>
+        <div className="modal-head"><div><span>PASO {wizardStep} DE 4</span><h2 id="contract-title">{wizardStep === 1 ? 'Datos de las partes' : wizardStep === 2 ? 'Jornada y salario' : wizardStep === 3 ? 'Condiciones del contrato' : 'Revisar borrador'}</h2></div><button aria-label="Cerrar" onClick={() => setContractWizard(false)}>×</button></div>
+        <div className="steps four"><i className="done" /><i className={wizardStep >= 2 ? 'done' : ''} /><i className={wizardStep >= 3 ? 'done' : ''} /><i className={wizardStep >= 4 ? 'done' : ''} /></div>
+        {wizardStep === 1 && <div className="wizard-fields"><h3>Persona empleadora</h3><div className="field-row"><label>Nombre y apellidos<input value={draft.employerName} onChange={e => setDraft({ ...draft, employerName: e.target.value })} /></label><label>DNI/NIE<input value={draft.employerDni} onChange={e => setDraft({ ...draft, employerDni: e.target.value })} /></label></div><label>Domicilio<input value={draft.employerAddress} onChange={e => setDraft({ ...draft, employerAddress: e.target.value })} /></label><h3>Persona trabajadora</h3><div className="field-row"><label>Nombre y apellidos<input value={draft.employeeName} onChange={e => setDraft({ ...draft, employeeName: e.target.value })} /></label><label>DNI/NIE<input value={draft.employeeDni} onChange={e => setDraft({ ...draft, employeeDni: e.target.value })} /></label></div><label>Número de la Seguridad Social<input value={draft.employeeNss} onChange={e => setDraft({ ...draft, employeeNss: e.target.value })} /></label><label>Domicilio<input value={draft.employeeAddress} onChange={e => setDraft({ ...draft, employeeAddress: e.target.value })} /></label><div className="privacy-note">Datos guardados solo en este navegador. No se envían a una base de datos.</div></div>}
+        {wizardStep === 2 && <div className="wizard-fields"><label>Fecha de inicio<input type="date" value={draft.startDate} onChange={e => setDraft({ ...draft, startDate: e.target.value })} /></label><div className="field-row"><label>Horas semanales<input type="number" min="0.5" max="40" step="0.5" value={draft.weeklyHours} onChange={e => setDraft({ ...draft, weeklyHours: Number(e.target.value) })} /></label><label>Salario por hora (€)<input type="number" min="0.01" step="0.01" value={draft.hourlyRate} onChange={e => setDraft({ ...draft, hourlyRate: Number(e.target.value) })} /></label></div><label>Días de trabajo<input type="text" value={draft.workDays} onChange={e => setDraft({ ...draft, workDays: e.target.value })} /></label><div className="estimate"><span>Salario mensual estimado</span><strong>{euro(draft.hourlyRate * draft.weeklyHours * 52 / 12)}</strong><small>Estimación orientativa; debe validarse con la normativa aplicable.</small></div></div>}
+        {wizardStep === 3 && <div className="wizard-fields"><div className="field-row"><label>Día habitual de pago<input type="number" min="1" max="31" value={draft.paymentDay} onChange={e => setDraft({ ...draft, paymentDay: Number(e.target.value) })} /></label><label>Periodo de prueba (días)<input type="number" min="0" max="60" value={draft.trialPeriod} onChange={e => setDraft({ ...draft, trialPeriod: Number(e.target.value) })} /></label></div><label>Pagas extraordinarias<select value={draft.extraPays} onChange={e => setDraft({ ...draft, extraPays: e.target.value as Contract['extraPays'] })}><option value="prorated">Prorrateadas en 12 mensualidades</option><option value="separate">Dos pagas separadas</option></select></label><label>Vacaciones anuales<input type="number" min="30" value={draft.vacationDays} onChange={e => setDraft({ ...draft, vacationDays: Number(e.target.value) })} /></label><div className="info-box">El borrador asumirá contrato indefinido a tiempo parcial, sin pernoctas, salario en especie ni horas de presencia.</div></div>}
+        {wizardStep === 4 && <div className="review-grid"><div><span>Empleador</span><strong>{draft.employerName || 'Pendiente'}</strong></div><div><span>Persona trabajadora</span><strong>{draft.employeeName || 'Pendiente'}</strong></div><div><span>Fecha de inicio</span><strong>{formatDate(draft.startDate)}</strong></div><div><span>Jornada semanal</span><strong>{draft.weeklyHours} horas</strong></div><div><span>Salario por hora</span><strong>{euro(draft.hourlyRate)}</strong></div><div><span>Pagas extra</span><strong>{draft.extraPays === 'prorated' ? 'Prorrateadas' : 'Dos separadas'}</strong></div><p>Este documento será un borrador basado en los datos indicados. Revísalo antes de firmarlo o presentarlo.</p></div>}
+        <div className="modal-actions wizard-actions">{wizardStep > 1 ? <button onClick={() => setWizardStep(wizardStep - 1)}>Atrás</button> : <button onClick={() => setContractWizard(false)}>Cancelar</button>}<button className="primary" onClick={() => wizardStep < 4 ? setWizardStep(wizardStep + 1) : saveWizard()}>{wizardStep < 4 ? 'Continuar' : 'Guardar borrador'}</button></div>
       </section>
     </div>}
 
     <section className="contract-print">
       <div className="print-header"><p>CONTRATO DE TRABAJO INDEFINIDO</p><h1>Servicio del hogar familiar</h1><span>Borrador generado por Contrata Hogar</span></div>
-      <h2>1. Partes del contrato</h2><div className="parties"><p><b>Persona empleadora</b><br />Jorge M.<br /><em>Datos identificativos pendientes de completar</em></p><p><b>Persona trabajadora</b><br />María R.<br /><em>Datos identificativos pendientes de completar</em></p></div>
+      <h2>1. Partes del contrato</h2><div className="parties"><p><b>Persona empleadora</b><br />{contract.employerName}<br />DNI/NIE: {contract.employerDni}<br />{contract.employerAddress}</p><p><b>Persona trabajadora</b><br />{contract.employeeName}<br />DNI/NIE: {contract.employeeDni}<br />N.º Seguridad Social: {contract.employeeNss}<br />{contract.employeeAddress}</p></div>
       <h2>2. Condiciones acordadas</h2><table><tbody><tr><td>Modalidad</td><td>Contrato indefinido a tiempo parcial</td></tr><tr><td>Fecha de inicio</td><td>{formatDate(contract.startDate)}</td></tr><tr><td>Jornada</td><td>{contract.weeklyHours} horas semanales</td></tr><tr><td>Distribución</td><td>{contract.workDays}</td></tr><tr><td>Retribución</td><td>{euro(contract.hourlyRate)} por hora · {euro(salary)} mensuales estimados</td></tr><tr><td>Pagas extraordinarias</td><td>{contract.extraPays === 'prorated' ? 'Prorrateadas en 12 mensualidades' : 'Dos pagas separadas'}</td></tr><tr><td>Vacaciones</td><td>{contract.vacationDays} días naturales al año</td></tr><tr><td>Periodo de prueba</td><td>{contract.trialPeriod} días</td></tr><tr><td>Pago habitual</td><td>Día {contract.paymentDay} de cada mes</td></tr></tbody></table>
       <p className="contract-clause">No se acuerdan horas de presencia, pernoctas ni prestaciones salariales en especie. En lo no previsto se estará a la normativa vigente aplicable a la relación laboral especial del servicio del hogar familiar.</p>
       <div className="signatures"><p>Firma de la persona empleadora</p><p>Firma de la persona trabajadora</p></div><p className="draft-warning">BORRADOR — Completa los datos identificativos y revisa el documento antes de firmarlo o presentarlo.</p>
     </section>
 
-    <section className="receipt"><h1>Recibo individual justificativo del pago de salarios</h1><p><b>Periodo:</b> 1–31 de agosto de 2026</p><div className="parties"><p><b>Empleador</b><br />Jorge M.</p><p><b>Persona trabajadora</b><br />María R.</p></div><table><tbody><tr><td>Salario base estimado</td><td>{euro(salary)}</td></tr><tr><td>Aportación trabajadora a la Seguridad Social (estimada)</td><td>− {euro(deduction)}</td></tr><tr><td><b>Líquido total a percibir</b></td><td><b>{euro(net)}</b></td></tr></tbody></table><small>Documento de prueba. Revisa las cuantías y deducciones aplicables antes de entregarlo.</small></section>
+    <section className="receipt"><h1>Recibo individual justificativo del pago de salarios</h1><p><b>Periodo:</b> 1–31 de agosto de 2026</p><div className="parties"><p><b>Empleador</b><br />{contract.employerName || 'Pendiente'}</p><p><b>Persona trabajadora</b><br />{contract.employeeName || 'Pendiente'}</p></div><table><tbody><tr><td>Salario base estimado</td><td>{euro(salary)}</td></tr><tr><td>Aportación trabajadora a la Seguridad Social (estimada)</td><td>− {euro(deduction)}</td></tr><tr><td><b>Líquido total a percibir</b></td><td><b>{euro(net)}</b></td></tr></tbody></table><small>Documento de prueba. Revisa las cuantías y deducciones aplicables antes de entregarlo.</small></section>
     {toast && <div className="toast" role="status">✓ {toast}</div>}
   </main>;
 }
