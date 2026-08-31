@@ -118,13 +118,45 @@ export default function Home() {
   };
   const generateReceipt = () => {
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
-    pdf.setTextColor(8, 125, 189).setFont('helvetica', 'bold').setFontSize(9).text('CONTRATA HOGAR · RECIBO DE SALARIO', 20, 20);
-    pdf.setTextColor(23, 36, 43).setFontSize(20).text('Recibo individual de salarios', 20, 33);
-    pdf.setFont('helvetica', 'normal').setFontSize(9).text('Periodo: agosto de 2026', 20, 42);
-    const receiptRows = [['Persona empleadora', contract.employerName || 'Pendiente'], ['Persona trabajadora', contract.employeeName || 'Pendiente'], ['Salario bruto', euro(salary)], ['Aportación trabajadora estimada', `- ${euro(deduction)}`], ['Líquido a percibir', euro(net)], ['Método de pago', 'Transferencia bancaria'], ['Estado', paid ? 'Pagado' : 'Borrador pendiente de pago']];
-    let y = 55; receiptRows.forEach(([label, value]) => { pdf.setFillColor(246, 249, 250).rect(20, y, 62, 11, 'F'); pdf.setDrawColor(218, 227, 232).rect(20, y, 170, 11); pdf.setFont('helvetica', 'bold').setTextColor(45, 59, 66).text(label, 24, y + 7); pdf.setFont('helvetica', 'normal').text(value, 87, y + 7); y += 11; });
-    pdf.setFontSize(8).setTextColor(100, 115, 122).text('Documento de gestión. Comprueba las cotizaciones aplicables antes de entregar el recibo definitivo.', 20, y + 12);
-    pdf.save('recibo-salario-agosto-2026.pdf'); notify('Recibo de salario descargado');
+    const [year, month] = attendanceMonth.split('-').map(Number);
+    const days = new Date(year, month, 0).getDate();
+    const period = monthLabel(attendanceMonth);
+    const employerContribution = +(salary * .30).toFixed(2);
+    const left = 15, width = 180;
+    const box = (x: number, y: number, w: number, h: number, title: string, lines: string[]) => {
+      pdf.setDrawColor(118, 137, 145).rect(x, y, w, h);
+      pdf.setFillColor(237, 247, 252).rect(x, y, w, 7, 'F');
+      pdf.setFont('helvetica', 'bold').setFontSize(7.5).setTextColor(23, 36, 43).text(title.toUpperCase(), x + 3, y + 4.8);
+      pdf.setFont('helvetica', 'normal').setFontSize(7.3);
+      lines.forEach((line, index) => pdf.text(line, x + 3, y + 12 + index * 4.2));
+    };
+    pdf.setFillColor(8, 125, 189).rect(0, 0, 210, 16, 'F');
+    pdf.setTextColor(255, 255, 255).setFont('helvetica', 'bold').setFontSize(8).text('CONTRATA HOGAR', left, 10);
+    pdf.setTextColor(23, 36, 43).setFontSize(15).text('RECIBO INDIVIDUAL JUSTIFICATIVO DEL PAGO DE SALARIOS', left, 25);
+    pdf.setFont('helvetica', 'normal').setFontSize(7).setTextColor(100, 115, 122).text('Servicio del hogar familiar', left, 30);
+    box(left, 35, 88, 31, 'Persona empleadora', [contract.employerName || 'Pendiente de completar', `DNI/NIE: ${contract.employerDni || 'Pendiente'}`, `Domicilio: ${contract.employerAddress || 'Pendiente'}`]);
+    box(107, 35, 88, 31, 'Persona trabajadora', [contract.employeeName || 'Pendiente de completar', `DNI/NIE: ${contract.employeeDni || 'Pendiente'}`, `N. afiliación S.S.: ${contract.employeeNss || 'Pendiente'}`]);
+    box(left, 70, width, 20, 'Periodo de liquidación', [`Del 1 al ${days} de ${period} | Total días: ${days} | Jornada: ${contract.weeklyHours} h/semana`]);
+    pdf.setFillColor(237, 247, 252).rect(left, 95, width, 8, 'F');
+    pdf.setDrawColor(118, 137, 145).rect(left, 95, width, 70);
+    pdf.setFont('helvetica', 'bold').setFontSize(8).setTextColor(23, 36, 43).text('I. DEVENGOS', left + 3, 100.5);
+    pdf.setFontSize(7).text('CONCEPTO', left + 3, 109).text('IMPORTE', 190, 109, { align: 'right' });
+    pdf.setFont('helvetica', 'normal').text('Salario mensual (incluye pagas extraordinarias prorrateadas)', left + 3, 117).text(euro(salary), 190, 117, { align: 'right' });
+    pdf.setDrawColor(205, 217, 223).line(left + 3, 153, 192, 153);
+    pdf.setFont('helvetica', 'bold').text('A. TOTAL DEVENGADO', left + 3, 160).text(euro(salary), 190, 160, { align: 'right' });
+    pdf.setFillColor(237, 247, 252).rect(left, 170, width, 8, 'F');
+    pdf.setDrawColor(118, 137, 145).rect(left, 170, width, 52);
+    pdf.setFont('helvetica', 'bold').setFontSize(8).text('II. DEDUCCIONES', left + 3, 175.5);
+    pdf.setFont('helvetica', 'normal').setFontSize(7).text('Aportación de la persona trabajadora a la Seguridad Social (estimada)', left + 3, 188).text(euro(deduction), 190, 188, { align: 'right' });
+    pdf.text('Retención IRPF', left + 3, 196).text('No calculada', 190, 196, { align: 'right' });
+    pdf.setDrawColor(205, 217, 223).line(left + 3, 205, 192, 205);
+    pdf.setFont('helvetica', 'bold').text('B. TOTAL A DEDUCIR', left + 3, 213).text(euro(deduction), 190, 213, { align: 'right' });
+    pdf.setFillColor(8, 125, 189).rect(left, 228, width, 18, 'F');
+    pdf.setTextColor(255, 255, 255).setFont('helvetica', 'bold').setFontSize(10).text('LÍQUIDO TOTAL A PERCIBIR (A - B)', left + 4, 239).text(euro(net), 190, 239, { align: 'right' });
+    box(left, 251, width, 24, 'Bases y aportaciones a la Seguridad Social', [`Base de cotización orientativa: ${euro(salary)} | Aportación empleadora estimada: ${euro(employerContribution)}`, 'Las cuotas son estimaciones y deben contrastarse con la liquidación oficial de la Seguridad Social.']);
+    pdf.setFont('helvetica', 'normal').setFontSize(7).setTextColor(70, 85, 92).text(`Pago por transferencia bancaria - Estado: ${paid ? 'PAGADO' : 'PENDIENTE DE PAGO'}`, left, 283);
+    pdf.text('Firma de la persona empleadora', left, 291).text('Recibí: persona trabajadora', 125, 291);
+    pdf.save(`recibo-salario-${attendanceMonth}.pdf`); notify('Recibo de salario descargado');
   };
   const generateContract = () => {
     if (!contractReady) { openContractWizard(); notify(Math.abs(contractScheduleHours - contract.weeklyHours) < .01 ? 'El documento está incompleto: revisa los datos obligatorios' : `El horario suma ${contractScheduleHours.toLocaleString('es-ES')} h y la jornada pactada es de ${contract.weeklyHours.toLocaleString('es-ES')} h`); return; }
