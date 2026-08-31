@@ -93,8 +93,8 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .contract-copy>span{font-size:8px;letter-spacing:1.1px;color:#d9f3ff;font-weight:800}.contract-copy h2{font-size:17px;margin:6px 0 5px}.contract-copy p{font-size:10px;color:#dbf2fc;margin:0}.contract-checks{display:flex;gap:14px;margin-top:12px}.contract-checks span{font-size:8px;color:#e7f8ff}
 .contract-actions{display:grid;gap:8px}.contract-actions button{border:1px solid #ffffff55;background:#ffffff12;color:#fff;border-radius:18px;padding:9px 14px;font-size:10px;font-weight:750}.contract-actions .primary{background:#fff;color:#087dbd}
 .toast{position:fixed;right:24px;bottom:24px;background:#087dbd;color:#fff;padding:13px 18px;border-radius:14px;box-shadow:0 12px 30px #087dbd44;font-size:12px;z-index:20}
-.modal-backdrop{position:fixed;inset:0;background:#18313e73;backdrop-filter:blur(5px);display:grid;place-items:center;padding:22px;z-index:30}
-.edit-modal{width:min(520px,100%);background:#fff;border-radius:24px;padding:28px;box-shadow:0 30px 80px #102d3c4d}
+.modal-backdrop{position:fixed;inset:0;background:#18313e73;backdrop-filter:blur(5px);display:grid;place-items:center;padding:22px;z-index:30;overflow-y:auto}
+.edit-modal{width:min(520px,100%);max-height:calc(100dvh - 44px);overflow-y:auto;background:#fff;border-radius:24px;padding:28px;box-shadow:0 30px 80px #102d3c4d}
 .modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
 .modal-head span{color:var(--green);font-size:9px;font-weight:800;letter-spacing:1.1px}
 .modal-head h2{margin:6px 0 0;font-size:25px;letter-spacing:-.7px}
@@ -109,13 +109,14 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:24px}
 .modal-actions button{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:18px;padding:10px 17px;font-size:11px;font-weight:750}
 .modal-actions .primary{background:var(--green);border-color:var(--green);color:#fff}
-.contract-wizard{width:min(590px,100%)}
+.contract-wizard{width:min(590px,100%);overflow:hidden;display:flex;flex-direction:column}
 .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:16px 0 23px}.steps i{height:4px;background:#e5edf1;border-radius:4px}.steps i.done{background:var(--green)}
 .steps.four{grid-template-columns:repeat(4,1fr)}
-.wizard-fields{display:grid;gap:16px}.wizard-fields>label{display:grid;gap:7px;font-size:11px;font-weight:700;color:#52636d}.info-box{font-size:10px;line-height:1.5;color:#526d7b;background:#eef8fc;border-radius:14px;padding:14px}
+.wizard-fields{display:grid;gap:16px;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px 5px 4px 1px}.wizard-fields>label{display:grid;gap:7px;font-size:11px;font-weight:700;color:#52636d}.info-box{font-size:10px;line-height:1.5;color:#526d7b;background:#eef8fc;border-radius:14px;padding:14px}
 .wizard-fields h3{font-size:11px;color:#087dbd;margin:4px 0 -6px;padding-bottom:7px;border-bottom:1px solid #e5edf1}
 .privacy-note{font-size:9px;line-height:1.45;color:#607782;background:#eef8fc;border-radius:12px;padding:11px 13px}
-.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.review-grid>div{border:1px solid var(--line);border-radius:13px;padding:12px}.review-grid span,.review-grid strong{display:block}.review-grid span{font-size:9px;color:var(--muted);margin-bottom:5px}.review-grid strong{font-size:11px}.review-grid>p{grid-column:1/-1;color:#6d7d85;background:#fff7e7;border-radius:12px;padding:12px;font-size:10px;line-height:1.5;margin:4px 0 0}
+.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:5px}.review-grid>div{border:1px solid var(--line);border-radius:13px;padding:12px}.review-grid span,.review-grid strong{display:block}.review-grid span{font-size:9px;color:var(--muted);margin-bottom:5px}.review-grid strong{font-size:11px}.review-grid>p{grid-column:1/-1;color:#6d7d85;background:#fff7e7;border-radius:12px;padding:12px;font-size:10px;line-height:1.5;margin:4px 0 0}
+.wizard-actions{flex:0 0 auto;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .receipt,.contract-print{display:none}
 
 @media(max-width:820px){.sidebar{width:76px;padding:25px 12px}
@@ -139,7 +140,7 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .hero h2{font-size:27px}
 .tasks button{display:none}
 .field-row{grid-template-columns:1fr}
-.edit-modal{padding:22px}
+.edit-modal{max-height:calc(100dvh - 24px);padding:22px}
 .contract-card{grid-template-columns:auto 1fr;padding:20px}.contract-actions{grid-column:1/-1;grid-template-columns:1fr 1fr}.contract-checks{display:none}.review-grid{grid-template-columns:1fr}
 }
 
