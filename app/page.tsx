@@ -31,6 +31,17 @@ const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 6, hourlyRate
 const euro = (n: number) => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const scheduleHours = (entries: ScheduleEntry[]) => entries.reduce((total, entry) => { const [startHour, startMinute] = entry.start.split(':').map(Number); const [endHour, endMinute] = entry.end.split(':').map(Number); const minutes = endHour * 60 + endMinute - startHour * 60 - startMinute; return total + (minutes > 0 ? minutes / 60 : 0); }, 0);
 const scheduleText = (entries: ScheduleEntry[]) => entries.map(entry => `${entry.day}, de ${entry.start} a ${entry.end}`).join('; ');
+const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+const socialSecurity2026 = (grossSalary: number) => {
+  const brackets = [[329, 306], [510, 436], [693, 602], [877, 785], [1061, 970], [1242, 1151], [1424.40, 1424.40]];
+  const base = brackets.find(([limit]) => grossSalary <= limit)?.[1] ?? grossSalary;
+  const worker = cents(base * .047) + cents(base * .0155) + cents(base * .0015);
+  const commonEmployer = cents(base * .236) - cents(base * .236 * .20);
+  const unemploymentEmployer = cents(base * .055) - cents(base * .055 * .80);
+  const fogasaEmployer = cents(base * .002) - cents(base * .002 * .80);
+  const employer = cents(commonEmployer + unemploymentEmployer + fogasaEmployer + cents(base * .0075) + cents(base * .015));
+  return { base: cents(base), worker: cents(worker), employer, directDebit: cents(worker + employer), net: cents(grossSalary - worker), totalCost: cents(grossSalary + employer) };
+};
 const weekdayNumbers: Record<string, number> = { Domingo: 0, Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5, Sábado: 6 };
 const monthLabel = (value: string) => {
   const [year, month] = value.split('-').map(Number);
@@ -89,8 +100,9 @@ export default function Home() {
   }, []);
 
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
-  const deduction = useMemo(() => +(salary * .0637).toFixed(2), [salary]);
-  const net = salary - deduction;
+  const contributions = useMemo(() => socialSecurity2026(salary), [salary]);
+  const deduction = contributions.worker;
+  const net = contributions.net;
   const contractScheduleHours = scheduleHours(contract.scheduleEntries || []);
   const draftScheduleHours = scheduleHours(draft.scheduleEntries || []);
   const draftHoursMatch = Math.abs(draftScheduleHours - draft.weeklyHours) < .01;
@@ -121,8 +133,8 @@ export default function Home() {
     const [year, month] = attendanceMonth.split('-').map(Number);
     const days = new Date(year, month, 0).getDate();
     const period = monthLabel(attendanceMonth);
-    const employerContribution = +(salary * .30).toFixed(2);
-    const familyTotal = +(salary + employerContribution).toFixed(2);
+    const employerContribution = contributions.employer;
+    const familyTotal = contributions.totalCost;
     const left = 15, width = 180;
     const box = (x: number, y: number, w: number, h: number, title: string, lines: string[]) => {
       pdf.setDrawColor(118, 137, 145).rect(x, y, w, h);
@@ -154,14 +166,16 @@ export default function Home() {
     pdf.setFont('helvetica', 'bold').text('B. TOTAL A DEDUCIR', left + 3, 191).text(euro(deduction), 190, 191, { align: 'right' });
     pdf.setFillColor(8, 125, 189).rect(left, 201, width, 18, 'F');
     pdf.setTextColor(255, 255, 255).setFont('helvetica', 'bold').setFontSize(10).text('LÍQUIDO TOTAL A PERCIBIR (A - B)', left + 4, 212).text(euro(net), 190, 212, { align: 'right' });
-    pdf.setDrawColor(118, 137, 145).rect(left, 226, width, 42);
+    pdf.setDrawColor(118, 137, 145).rect(left, 226, width, 46);
     pdf.setFillColor(237, 247, 252).rect(left, 226, width, 8, 'F');
     pdf.setTextColor(23, 36, 43).setFont('helvetica', 'bold').setFontSize(8).text('COSTE Y COTIZACIÓN DE LA PERSONA EMPLEADORA', left + 3, 231.5);
-    pdf.setFont('helvetica', 'normal').setFontSize(7).text('Base de cotización orientativa', left + 3, 241).text(euro(salary), 190, 241, { align: 'right' });
-    pdf.text('Cuota de Seguridad Social a cargo de la persona empleadora (estimada)', left + 3, 249).text(euro(employerContribution), 190, 249, { align: 'right' });
-    pdf.setDrawColor(205, 217, 223).line(left + 3, 255, 192, 255);
-    pdf.setFont('helvetica', 'bold').setFontSize(8).text('COSTE TOTAL ESTIMADO PARA LA FAMILIA', left + 3, 263).text(euro(familyTotal), 190, 263, { align: 'right' });
-    pdf.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(100, 115, 122).text('Las cuotas son estimaciones y deben contrastarse con la liquidación oficial de la Seguridad Social.', left, 274);
+    pdf.setFont('helvetica', 'normal').setFontSize(6.8).text('Base de cotización 2026', left + 3, 239).text(euro(contributions.base), 190, 239, { align: 'right' });
+    pdf.text('Aportación de la persona trabajadora incluida en el cargo', left + 3, 245).text(euro(contributions.worker), 190, 245, { align: 'right' });
+    pdf.text('Aportación a cargo de la persona empleadora', left + 3, 251).text(euro(employerContribution), 190, 251, { align: 'right' });
+    pdf.setFont('helvetica', 'bold').text('CARGO TOTAL DOMICILIADO DE SEGURIDAD SOCIAL', left + 3, 258).text(euro(contributions.directDebit), 190, 258, { align: 'right' });
+    pdf.setDrawColor(205, 217, 223).line(left + 3, 262, 192, 262);
+    pdf.setFontSize(8).text('COSTE TOTAL', left + 3, 268).text(euro(familyTotal), 190, 268, { align: 'right' });
+    pdf.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(100, 115, 122).text('Cálculo orientativo 2026; el cargo definitivo es el liquidado por la Seguridad Social.', left, 277);
     pdf.setFontSize(7).setTextColor(70, 85, 92).text(`Pago por transferencia bancaria - Estado: ${paid ? 'PAGADO' : 'PENDIENTE DE PAGO'}`, left, 281);
     pdf.text('Firma de la persona empleadora', left, 291).text('Recibí: persona trabajadora', 125, 291);
     pdf.save(`recibo-salario-${attendanceMonth}.pdf`); notify('Recibo de salario descargado');
@@ -229,9 +243,8 @@ export default function Home() {
   const generateManagementSheet = () => {
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
     const gross = +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2);
-    const workerContribution = +(gross * .0637).toFixed(2);
-    const estimatedEmployerContribution = +(gross * .30).toFixed(2);
-    const rows = [['Salario bruto mensual', euro(gross)], ['Aportación trabajadora estimada', euro(workerContribution)], ['Neto estimado', euro(gross - workerContribution)], ['Cuota empleadora estimada', euro(estimatedEmployerContribution)], ['Coste familiar estimado', euro(gross + estimatedEmployerContribution)], ['Día habitual de pago', `Día ${contract.paymentDay}`], ['Fecha de alta prevista', formatDate(contract.startDate)], ['Fecha de baja', 'Sin registrar']];
+    const socialSecurity = socialSecurity2026(gross);
+    const rows = [['Salario bruto mensual', euro(gross)], ['Base de cotización 2026', euro(socialSecurity.base)], ['Aportación trabajadora', euro(socialSecurity.worker)], ['Neto a transferir', euro(socialSecurity.net)], ['Cuota empleadora', euro(socialSecurity.employer)], ['Cargo total Seguridad Social', euro(socialSecurity.directDebit)], ['Coste total', euro(socialSecurity.totalCost)], ['Día habitual de pago', `Día ${contract.paymentDay}`], ['Fecha de alta prevista', formatDate(contract.startDate)], ['Fecha de baja', 'Sin registrar']];
     pdf.setTextColor(8, 125, 189).setFont('helvetica', 'bold').setFontSize(9).text('CONTRATA HOGAR · DOCUMENTO INTERNO', 20, 20);
     pdf.setTextColor(23, 36, 43).setFontSize(21).text('Ficha interna de gestión', 20, 32);
     pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(95, 117, 128).text('No forma parte del contrato firmado', 20, 39);
@@ -276,7 +289,7 @@ export default function Home() {
 
         {activeView === 'attendance' && <section className="app-view"><div className="view-head attendance-head"><div><span>CONTROL MENSUAL</span><h2>Revisar asistencia</h2><p>Confirma cada jornada o registra baja o vacaciones antes de cerrar el mes.</p></div><span className={`status-pill ${attendanceConfirmed ? 'ok' : ''}`}>{attendanceConfirmed ? 'Mes confirmado' : `${completedAttendanceDays}/${attendanceDays.length} revisadas`}</span></div><div className="month-selector"><button aria-label="Mes anterior" onClick={() => moveAttendanceMonth(-1)}>‹</button><label>Mes<input type="month" value={attendanceMonth} onChange={event => { setAttendanceMonth(event.target.value); setAttendanceConfirmed(false); }} /></label><strong>{monthLabel(attendanceMonth)}</strong><button aria-label="Mes siguiente" onClick={() => moveAttendanceMonth(1)}>›</button></div><div className="attendance-summary"><div><span>Horas previstas</span><strong>{contract.weeklyHours.toLocaleString('es-ES')} h/semana</strong></div><div><span>Horario contractual</span><strong>{scheduleText(contract.scheduleEntries)}</strong></div></div><div className="attendance-list">{attendanceDays.length ? attendanceDays.map(({ key, date, entry }) => { const status = attendanceStatus[key] || 'scheduled'; const formatted = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).format(date); return <article key={key}><div className="attendance-day-number"><b>{date.getDate()}</b><small>{new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(date).replace('.', '')}</small></div><div className="attendance-date"><b>{formatted.charAt(0).toUpperCase() + formatted.slice(1)}</b><small>{entry.start}–{entry.end}</small></div><span className={`attendance-state ${status}`}>{status === 'completed' ? 'Confirmada' : status === 'sick' ? 'Baja' : status === 'vacation' ? 'Vacaciones' : 'Pendiente'}</span><div className="attendance-actions"><button className={status === 'completed' ? 'selected' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'completed' })}>Confirmar</button><button className={status === 'sick' ? 'selected sick' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'sick' })}>Baja</button><button className={status === 'vacation' ? 'selected vacation' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'vacation' })}>Vacaciones</button></div></article>}) : <div className="empty-month">No hay jornadas contractuales previstas en este mes.</div>}</div><button className="view-primary" disabled={!attendanceDays.length || completedAttendanceDays < attendanceDays.length} onClick={() => { setAttendanceConfirmed(true); notify(`Asistencia de ${monthLabel(attendanceMonth)} confirmada`); }}>Confirmar mes</button></section>}
 
-        {activeView === 'payroll' && <section className="app-view"><div className="view-head"><div><span>AGOSTO 2026</span><h2>Nómina mensual</h2><p>Revisa el cálculo, genera el recibo y registra la transferencia.</p></div><span className={`status-pill ${paid ? 'ok' : ''}`}>{paid ? 'Pagada' : payrollPrepared ? 'Pendiente de pago' : 'Sin preparar'}</span></div><div className="payroll-flow"><div className={attendanceConfirmed ? 'done' : ''}><b>1</b><p><strong>Asistencia</strong><small>{attendanceConfirmed ? 'Mes confirmado' : 'Pendiente de confirmar'}</small></p></div><div className={payrollPrepared ? 'done' : ''}><b>2</b><p><strong>Preparar nómina</strong><small>{euro(salary)} brutos</small></p><button disabled={!attendanceConfirmed || payrollPrepared} onClick={() => setPayrollPrepared(true)}>Preparar</button></div><div className={paid ? 'done' : ''}><b>3</b><p><strong>Transferencia</strong><small>{euro(net)} netos estimados</small></p><button disabled={!payrollPrepared || paid} onClick={() => setPaid(true)}>Marcar pagada</button></div></div><div className="payroll-detail"><div><span>Salario bruto</span><strong>{euro(salary)}</strong></div><div><span>Deducción trabajadora estimada</span><strong>− {euro(deduction)}</strong></div><div className="net"><span>Neto a transferir</span><strong>{euro(net)}</strong></div></div><button className="view-primary" disabled={!payrollPrepared} onClick={generateReceipt}>Generar recibo PDF</button></section>}
+        {activeView === 'payroll' && <section className="app-view"><div className="view-head"><div><span>AGOSTO 2026</span><h2>Nómina mensual</h2><p>Revisa el cálculo, genera el recibo y registra la transferencia.</p></div><span className={`status-pill ${paid ? 'ok' : ''}`}>{paid ? 'Pagada' : payrollPrepared ? 'Pendiente de pago' : 'Sin preparar'}</span></div><div className="payroll-flow"><div className={attendanceConfirmed ? 'done' : ''}><b>1</b><p><strong>Asistencia</strong><small>{attendanceConfirmed ? 'Mes confirmado' : 'Pendiente de confirmar'}</small></p></div><div className={payrollPrepared ? 'done' : ''}><b>2</b><p><strong>Preparar nómina</strong><small>{euro(salary)} brutos</small></p><button disabled={!attendanceConfirmed || payrollPrepared} onClick={() => setPayrollPrepared(true)}>Preparar</button></div><div className={paid ? 'done' : ''}><b>3</b><p><strong>Transferencia</strong><small>{euro(net)} netos estimados</small></p><button disabled={!payrollPrepared || paid} onClick={() => setPaid(true)}>Marcar pagada</button></div></div><div className="payroll-detail"><div><span>Salario bruto</span><strong>{euro(salary)}</strong></div><div><span>Deducción trabajadora</span><strong>- {euro(deduction)}</strong></div><div className="net"><span>Neto a transferir</span><strong>{euro(net)}</strong></div><div><span>Cargo Seguridad Social</span><strong>{euro(contributions.directDebit)}</strong></div><div><span>Coste total</span><strong>{euro(contributions.totalCost)}</strong></div></div><button className="view-primary" disabled={!payrollPrepared} onClick={generateReceipt}>Generar recibo PDF</button></section>}
 
         {activeView === 'person' && <section className="app-view"><Title title="Ficha de la persona trabajadora" /><article className="person"><div className="personhead"><b>{contract.employeeName ? contract.employeeName.slice(0,2).toUpperCase() : 'TR'}</b><p><strong>{contract.employeeName || 'Persona trabajadora'}</strong><small>Ficha informativa · Contrato activo</small></p><span className="source-badge">Datos del contrato</span></div><dl><div><dt>Antigüedad</dt><dd>{seniority(contract.startDate)}<small>Inicio: {formatDate(contract.startDate)}</small></dd></div><div><dt>Jornada</dt><dd>{contract.weeklyHours} h / semana<small>{scheduleText(contract.scheduleEntries)}</small></dd></div><div><dt>Salario por hora</dt><dd>{euro(contract.hourlyRate)}<small>{euro(salary)} brutos/mes</small></dd></div></dl></article><section className="contract-card"><div className="contract-icon">▧</div><div className="contract-copy"><span>CONTRATO ACTIVO</span><h2>Indefinido · Tiempo parcial</h2><p>Fuente única de las condiciones laborales</p></div><div className="contract-actions"><button onClick={openContractWizard}>Revisar contrato</button><button className="primary" disabled={!contractReady} onClick={generateContract}>Descargar PDF</button></div></section></section>}
 
