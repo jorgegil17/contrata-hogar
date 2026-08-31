@@ -27,10 +27,26 @@ type Contract = {
   employeeNss: string;
   employeeAddress: string;
 };
-const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 12, hourlyRate: 10, workDays: 'Lunes, miércoles y viernes', workAddress: '', schedule: '', scheduleEntries: [{ day: 'Lunes', start: '10:00', end: '14:00' }, { day: 'Miércoles', start: '10:00', end: '14:00' }, { day: 'Viernes', start: '10:00', end: '14:00' }], paymentDay: 31, extraPays: 'prorated', trialPeriod: 0, hasTrialPeriod: false, vacationDays: 30, signaturePlace: '', signatureDate: '', employerName: '', employerDni: '', employerAddress: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '' };
+const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 6, hourlyRate: 12, workDays: 'Lunes y jueves', workAddress: '', schedule: '', scheduleEntries: [{ day: 'Lunes', start: '10:00', end: '13:00' }, { day: 'Jueves', start: '10:00', end: '13:00' }], paymentDay: 31, extraPays: 'prorated', trialPeriod: 0, hasTrialPeriod: false, vacationDays: 30, signaturePlace: '', signatureDate: '', employerName: '', employerDni: '', employerAddress: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '' };
 const euro = (n: number) => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const scheduleHours = (entries: ScheduleEntry[]) => entries.reduce((total, entry) => { const [startHour, startMinute] = entry.start.split(':').map(Number); const [endHour, endMinute] = entry.end.split(':').map(Number); const minutes = endHour * 60 + endMinute - startHour * 60 - startMinute; return total + (minutes > 0 ? minutes / 60 : 0); }, 0);
 const scheduleText = (entries: ScheduleEntry[]) => entries.map(entry => `${entry.day}, de ${entry.start} a ${entry.end}`).join('; ');
+const weekdayNumbers: Record<string, number> = { Domingo: 0, Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5, Sábado: 6 };
+const monthLabel = (value: string) => {
+  const [year, month] = value.split('-').map(Number);
+  return new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date(year, month - 1, 1));
+};
+const monthWorkdays = (value: string, entries: ScheduleEntry[], startDate: string) => {
+  const [year, month] = value.split('-').map(Number);
+  const contractStart = new Date(`${startDate}T00:00:00`);
+  return Array.from({ length: new Date(year, month, 0).getDate() }, (_, index) => new Date(year, month - 1, index + 1))
+    .filter(date => date >= contractStart)
+    .flatMap(date => entries.filter(entry => weekdayNumbers[entry.day] === date.getDay()).map((entry, entryIndex) => ({
+      key: `${year}-${String(month).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}-${entryIndex}`,
+      date,
+      entry,
+    })));
+};
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -60,7 +76,8 @@ export default function Home() {
   const [wizardStep, setWizardStep] = useState(1);
   const [paid, setPaid] = useState(false);
   const [attendanceConfirmed, setAttendanceConfirmed] = useState(false);
-  const [attendanceStatus, setAttendanceStatus] = useState<Record<number, 'scheduled' | 'completed' | 'absence'>>({});
+  const [attendanceMonth, setAttendanceMonth] = useState('2026-08');
+  const [attendanceStatus, setAttendanceStatus] = useState<Record<string, 'scheduled' | 'completed' | 'sick' | 'vacation'>>({});
   const [payrollPrepared, setPayrollPrepared] = useState(false);
   const [toast, setToast] = useState('');
 
@@ -79,6 +96,14 @@ export default function Home() {
   const draftHoursMatch = Math.abs(draftScheduleHours - draft.weeklyHours) < .01;
   const partiesComplete = Boolean(contract.employerName && contract.employerDni && contract.employerAddress && contract.employeeName && contract.employeeDni && contract.employeeNss && contract.employeeAddress);
   const contractReady = Boolean(partiesComplete && contract.workAddress && contract.signaturePlace && contract.signatureDate && contract.scheduleEntries?.length && Math.abs(contractScheduleHours - contract.weeklyHours) < .01);
+  const attendanceDays = useMemo(() => monthWorkdays(attendanceMonth, contract.scheduleEntries || [], contract.startDate), [attendanceMonth, contract.scheduleEntries, contract.startDate]);
+  const completedAttendanceDays = attendanceDays.filter(day => attendanceStatus[day.key] && attendanceStatus[day.key] !== 'scheduled').length;
+  const moveAttendanceMonth = (offset: number) => {
+    const [year, month] = attendanceMonth.split('-').map(Number);
+    const next = new Date(year, month - 1 + offset, 1);
+    setAttendanceMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+    setAttendanceConfirmed(false);
+  };
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
   const updateSchedule = (index: number, update: Partial<ScheduleEntry>) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...update } : entry) });
   const addSchedule = () => setDraft({ ...draft, scheduleEntries: [...draft.scheduleEntries, { day: 'Lunes', start: '10:00', end: '13:00' }] });
@@ -186,7 +211,7 @@ export default function Home() {
   return <main className="shell">
     <aside className="sidebar">
       <a className="brand" href="#top" aria-label="Contrata Hogar, inicio"><b>C</b><span>Contrata Hogar</span></a>
-      <nav><button className={activeView === 'home' ? 'active' : ''} onClick={() => setActiveView('home')}><i>⌂</i><span>Inicio</span></button><button className={activeView === 'attendance' ? 'active' : ''} onClick={() => setActiveView('attendance')}><i>□</i><span>Asistencia</span></button><button className={activeView === 'payroll' ? 'active' : ''} onClick={() => setActiveView('payroll')}><i>€</i><span>Nóminas</span></button><button className={activeView === 'person' ? 'active' : ''} onClick={() => setActiveView('person')}><i>♙</i><span>Persona y contrato</span></button><button className={activeView === 'documents' ? 'active' : ''} onClick={() => setActiveView('documents')}><i>▤</i><span>Documentos</span></button></nav>
+      <nav><button aria-label="Inicio" title="Inicio" className={activeView === 'home' ? 'active' : ''} onClick={() => setActiveView('home')}><i>⌂</i><span>Inicio</span></button><button aria-label="Asistencia" title="Asistencia" className={activeView === 'attendance' ? 'active' : ''} onClick={() => setActiveView('attendance')}><i>✓</i><span>Asistencia</span></button><button aria-label="Nóminas" title="Nóminas" className={activeView === 'payroll' ? 'active' : ''} onClick={() => setActiveView('payroll')}><i>€</i><span>Nóminas</span></button><button aria-label="Persona y contrato" title="Persona y contrato" className={activeView === 'person' ? 'active' : ''} onClick={() => setActiveView('person')}><i>♙</i><span>Persona y contrato</span></button><button aria-label="Documentos" title="Documentos" className={activeView === 'documents' ? 'active' : ''} onClick={() => setActiveView('documents')}><i>▤</i><span>Documentos</span></button></nav>
       <div className="sidebottom"><a href="#ajustes"><i>⚙</i><span>Ajustes</span></a><div className="profile"><b>{contract.employerName ? contract.employerName.slice(0, 2).toUpperCase() : 'EM'}</b><p>{contract.employerName || 'Empleador'}<small>Empleador</small></p></div></div>
     </aside>
 
@@ -209,7 +234,7 @@ export default function Home() {
         <section className="documents" id="docs"><Title title="Documentos recientes" action="Ver todos →" onClick={() => setActiveView('documents')} /><div className="doc"><b>PDF</b><p><strong>Recibo de salarios · Julio 2026</strong><small>Generado el 31 jul · Pagado</small></p><button onClick={() => setActiveView('documents')}>Ver</button></div></section>
         </>}
 
-        {activeView === 'attendance' && <section className="app-view"><div className="view-head"><div><span>AGOSTO 2026</span><h2>Revisar asistencia</h2><p>Confirma las jornadas previstas o registra una excepción antes de cerrar el mes.</p></div><span className={`status-pill ${attendanceConfirmed ? 'ok' : ''}`}>{attendanceConfirmed ? 'Mes confirmado' : 'Pendiente'}</span></div><div className="attendance-summary"><div><span>Horas previstas</span><strong>{contract.weeklyHours.toLocaleString('es-ES')} h/semana</strong></div><div><span>Horario contractual</span><strong>{scheduleText(contract.scheduleEntries)}</strong></div></div><div className="attendance-list">{contract.scheduleEntries.map((entry, index) => { const status = attendanceStatus[index] || 'scheduled'; return <article key={`${entry.day}-${index}`}><div className="attendance-date"><b>{entry.day}</b><small>{entry.start}–{entry.end}</small></div><span className={`attendance-state ${status}`}>{status === 'completed' ? 'Realizada' : status === 'absence' ? 'Ausencia' : 'Programada'}</span><div className="attendance-actions"><button onClick={() => setAttendanceStatus({ ...attendanceStatus, [index]: 'completed' })}>Confirmar</button><button onClick={() => setAttendanceStatus({ ...attendanceStatus, [index]: 'absence' })}>Ausencia</button></div></article>})}</div><button className="view-primary" disabled={Object.keys(attendanceStatus).length < contract.scheduleEntries.length} onClick={() => { setAttendanceConfirmed(true); notify('Asistencia del mes confirmada'); }}>Confirmar mes</button></section>}
+        {activeView === 'attendance' && <section className="app-view"><div className="view-head attendance-head"><div><span>CONTROL MENSUAL</span><h2>Revisar asistencia</h2><p>Confirma cada jornada o registra baja o vacaciones antes de cerrar el mes.</p></div><span className={`status-pill ${attendanceConfirmed ? 'ok' : ''}`}>{attendanceConfirmed ? 'Mes confirmado' : `${completedAttendanceDays}/${attendanceDays.length} revisadas`}</span></div><div className="month-selector"><button aria-label="Mes anterior" onClick={() => moveAttendanceMonth(-1)}>‹</button><label>Mes<input type="month" value={attendanceMonth} onChange={event => { setAttendanceMonth(event.target.value); setAttendanceConfirmed(false); }} /></label><strong>{monthLabel(attendanceMonth)}</strong><button aria-label="Mes siguiente" onClick={() => moveAttendanceMonth(1)}>›</button></div><div className="attendance-summary"><div><span>Horas previstas</span><strong>{contract.weeklyHours.toLocaleString('es-ES')} h/semana</strong></div><div><span>Horario contractual</span><strong>{scheduleText(contract.scheduleEntries)}</strong></div></div><div className="attendance-list">{attendanceDays.length ? attendanceDays.map(({ key, date, entry }) => { const status = attendanceStatus[key] || 'scheduled'; const formatted = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).format(date); return <article key={key}><div className="attendance-day-number"><b>{date.getDate()}</b><small>{new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(date).replace('.', '')}</small></div><div className="attendance-date"><b>{formatted.charAt(0).toUpperCase() + formatted.slice(1)}</b><small>{entry.start}–{entry.end}</small></div><span className={`attendance-state ${status}`}>{status === 'completed' ? 'Confirmada' : status === 'sick' ? 'Baja' : status === 'vacation' ? 'Vacaciones' : 'Pendiente'}</span><div className="attendance-actions"><button className={status === 'completed' ? 'selected' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'completed' })}>Confirmar</button><button className={status === 'sick' ? 'selected sick' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'sick' })}>Baja</button><button className={status === 'vacation' ? 'selected vacation' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'vacation' })}>Vacaciones</button></div></article>}) : <div className="empty-month">No hay jornadas contractuales previstas en este mes.</div>}</div><button className="view-primary" disabled={!attendanceDays.length || completedAttendanceDays < attendanceDays.length} onClick={() => { setAttendanceConfirmed(true); notify(`Asistencia de ${monthLabel(attendanceMonth)} confirmada`); }}>Confirmar mes</button></section>}
 
         {activeView === 'payroll' && <section className="app-view"><div className="view-head"><div><span>AGOSTO 2026</span><h2>Nómina mensual</h2><p>Revisa el cálculo, genera el recibo y registra la transferencia.</p></div><span className={`status-pill ${paid ? 'ok' : ''}`}>{paid ? 'Pagada' : payrollPrepared ? 'Pendiente de pago' : 'Sin preparar'}</span></div><div className="payroll-flow"><div className={attendanceConfirmed ? 'done' : ''}><b>1</b><p><strong>Asistencia</strong><small>{attendanceConfirmed ? 'Mes confirmado' : 'Pendiente de confirmar'}</small></p></div><div className={payrollPrepared ? 'done' : ''}><b>2</b><p><strong>Preparar nómina</strong><small>{euro(salary)} brutos</small></p><button disabled={!attendanceConfirmed || payrollPrepared} onClick={() => setPayrollPrepared(true)}>Preparar</button></div><div className={paid ? 'done' : ''}><b>3</b><p><strong>Transferencia</strong><small>{euro(net)} netos estimados</small></p><button disabled={!payrollPrepared || paid} onClick={() => setPaid(true)}>Marcar pagada</button></div></div><div className="payroll-detail"><div><span>Salario bruto</span><strong>{euro(salary)}</strong></div><div><span>Deducción trabajadora estimada</span><strong>− {euro(deduction)}</strong></div><div className="net"><span>Neto a transferir</span><strong>{euro(net)}</strong></div></div><button className="view-primary" disabled={!payrollPrepared} onClick={generateReceipt}>Generar recibo PDF</button></section>}
 
