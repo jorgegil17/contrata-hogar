@@ -56,7 +56,6 @@ function seniority(value: string) {
 export default function Home() {
   const [contract, setContract] = useState<Contract>(defaults);
   const [draft, setDraft] = useState<Contract>(defaults);
-  const [editing, setEditing] = useState(false);
   const [contractWizard, setContractWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
   const [printDoc, setPrintDoc] = useState<'payroll' | 'contract'>('payroll');
@@ -79,17 +78,9 @@ export default function Home() {
   const partiesComplete = Boolean(contract.employerName && contract.employerDni && contract.employerAddress && contract.employeeName && contract.employeeDni && contract.employeeNss && contract.employeeAddress);
   const contractReady = Boolean(partiesComplete && contract.workAddress && contract.signaturePlace && contract.signatureDate && contract.scheduleEntries?.length && Math.abs(contractScheduleHours - contract.weeklyHours) < .01);
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
-  const openEditor = () => { setDraft(contract); setEditing(true); };
   const updateSchedule = (index: number, update: Partial<ScheduleEntry>) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...update } : entry) });
   const addSchedule = () => setDraft({ ...draft, scheduleEntries: [...draft.scheduleEntries, { day: 'Lunes', start: '10:00', end: '13:00' }] });
   const removeSchedule = (index: number) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.filter((_, entryIndex) => entryIndex !== index) });
-  const saveContract = () => {
-    if (!draft.startDate || draft.weeklyHours <= 0 || draft.hourlyRate <= 0) return;
-    setContract(draft);
-    window.localStorage.setItem('contrata-hogar-contract', JSON.stringify(draft));
-    setEditing(false);
-    notify('Datos laborales guardados en este dispositivo');
-  };
   const openContractWizard = () => { setDraft(contract); setWizardStep(1); setContractWizard(true); };
   const saveWizard = () => {
     if (!draft.startDate || draft.weeklyHours <= 0 || draft.hourlyRate <= 0 || !draft.workAddress.trim() || !draft.scheduleEntries.length || !draftHoursMatch || !draft.signaturePlace.trim() || !draft.signatureDate || !draft.employerName || !draft.employerDni || !draft.employerAddress || !draft.employeeName || !draft.employeeDni || !draft.employeeNss || !draft.employeeAddress) { notify(draftHoursMatch ? 'Completa todos los datos necesarios del contrato' : 'El horario debe sumar exactamente las horas semanales pactadas'); return; }
@@ -196,7 +187,7 @@ export default function Home() {
         <div className="month">
           <article className={'pay ' + (paid ? 'done' : '')}><div className="cardtop"><b>€</b><span>{paid ? 'PAGADA' : 'PENDIENTE'}</span></div><p>Nómina de agosto</p><strong>{euro(net)}</strong><small>Neto estimado a transferir</small><div className="actions"><button className="primary" disabled={paid} onClick={() => { setPaid(true); notify('Pago marcado como realizado'); }}>{paid ? 'Pago registrado' : 'Marcar como pagada'}</button><button onClick={() => print('payroll')}>Ver recibo</button></div></article>
           <article className="person" id="persona">
-            <div className="personhead"><b>{contract.employeeName ? contract.employeeName.slice(0, 2).toUpperCase() : 'TR'}</b><p><strong>{contract.employeeName || 'Persona trabajadora'}</strong><small>Empleada del hogar · Contrato indefinido</small></p><button className="edit-link" onClick={openEditor}>Editar datos</button></div>
+            <div className="personhead"><b>{contract.employeeName ? contract.employeeName.slice(0, 2).toUpperCase() : 'TR'}</b><p><strong>{contract.employeeName || 'Persona trabajadora'}</strong><small>Ficha informativa · Contrato indefinido activo</small></p><span className="source-badge">Datos del contrato</span></div>
             <dl><div><dt>Antigüedad</dt><dd>{seniority(contract.startDate)}<small>Inicio: {formatDate(contract.startDate)}</small></dd></div><div><dt>Jornada</dt><dd>{contract.weeklyHours.toLocaleString('es-ES')} h / semana<small>Horario acordado</small></dd></div><div><dt>Salario por hora</dt><dd>{euro(contract.hourlyRate)}<small>{euro(salary)} brutos / mes estimados</small></dd></div></dl>
           </article>
         </div>
@@ -206,17 +197,6 @@ export default function Home() {
         <section className="documents" id="docs"><Title title="Documentos recientes" action="Ver todos →" onClick={() => notify('No hay más documentos en esta prueba')} /><div className="doc"><b>PDF</b><p><strong>Recibo de salarios · Julio 2026</strong><small>Generado el 31 jul · Pagado</small></p><button onClick={() => notify('Documento de ejemplo')}>Descargar</button></div></section>
       </div>
     </section>
-
-    {editing && <div className="modal-backdrop" role="presentation" onMouseDown={() => setEditing(false)}>
-      <section className="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-title" onMouseDown={e => e.stopPropagation()}>
-        <div className="modal-head"><div><span>CONDICIONES LABORALES</span><h2 id="edit-title">Editar contrato</h2></div><button aria-label="Cerrar" onClick={() => setEditing(false)}>×</button></div>
-        <p className="modal-intro">Estos datos se guardan únicamente en este navegador y actualizan las estimaciones de la pantalla.</p>
-        <label>Fecha de inicio del contrato<input type="date" value={draft.startDate} max={new Date().toISOString().slice(0, 10)} onChange={e => setDraft({ ...draft, startDate: e.target.value })} /></label>
-        <div className="field-row"><label>Horas semanales<input type="number" min="0.5" max="40" step="0.5" value={draft.weeklyHours} onChange={e => setDraft({ ...draft, weeklyHours: Number(e.target.value) })} /></label><label>Salario por hora (€)<input type="number" min="0.01" step="0.01" value={draft.hourlyRate} onChange={e => setDraft({ ...draft, hourlyRate: Number(e.target.value) })} /></label></div>
-        <div className="estimate"><span>Salario mensual estimado</span><strong>{euro(draft.hourlyRate * draft.weeklyHours * 52 / 12)}</strong><small>Horas semanales × 52 semanas ÷ 12 meses</small></div>
-        <div className="modal-actions"><button onClick={() => setEditing(false)}>Cancelar</button><button className="primary" onClick={saveContract}>Guardar cambios</button></div>
-      </section>
-    </div>}
 
     {contractWizard && <div className="modal-backdrop" role="presentation" onMouseDown={() => setContractWizard(false)}>
       <section className="edit-modal contract-wizard" role="dialog" aria-modal="true" aria-labelledby="contract-title" onMouseDown={e => e.stopPropagation()}>

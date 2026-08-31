@@ -61,8 +61,7 @@ button{cursor:pointer}
 .personhead strong,.personhead small{display:block}
 .personhead strong{font-size:13px}
 .personhead small{font-size:10px;color:var(--muted);margin-top:4px}
-.personhead button{border:0;background:none;color:#829089}
-.personhead .edit-link{color:var(--green);font-size:10px;font-weight:750;padding:8px 10px;border-radius:14px;background:#eaf7fd;white-space:nowrap}
+.source-badge{color:#607782;font-size:9px;font-weight:750;padding:7px 10px;border-radius:14px;background:#f1f5f7;white-space:nowrap}
 dl{margin:0}
 dl>div{display:grid;grid-template-columns:1fr 1.25fr;padding:14px 0;border-bottom:1px solid #edf0ee}
 dl>div:last-child{border:0;padding-bottom:0}
