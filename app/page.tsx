@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 
 type ScheduleEntry = { day: string; start: string; end: string };
+type VacationPeriod = { id: string; start: string; end: string };
 type Contract = {
   startDate: string;
   weeklyHours: number;
@@ -32,6 +33,7 @@ const euro = (n: number) => n.toLocaleString('es-ES', { minimumFractionDigits: 2
 const scheduleHours = (entries: ScheduleEntry[]) => entries.reduce((total, entry) => { const [startHour, startMinute] = entry.start.split(':').map(Number); const [endHour, endMinute] = entry.end.split(':').map(Number); const minutes = endHour * 60 + endMinute - startHour * 60 - startMinute; return total + (minutes > 0 ? minutes / 60 : 0); }, 0);
 const scheduleText = (entries: ScheduleEntry[]) => entries.map(entry => `${entry.day}, de ${entry.start} a ${entry.end}`).join('; ');
 const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+const calendarDays = (start: string, end: string) => Math.floor((new Date(`${end}T12:00:00`).getTime() - new Date(`${start}T12:00:00`).getTime()) / 86400000) + 1;
 const socialSecurity2026 = (grossSalary: number) => {
   const brackets = [[329, 306], [510, 436], [693, 602], [877, 785], [1061, 970], [1242, 1151], [1424.40, 1424.40]];
   const base = brackets.find(([limit]) => grossSalary <= limit)?.[1] ?? grossSalary;
@@ -88,6 +90,9 @@ export default function Home() {
   const [attendanceMonth, setAttendanceMonth] = useState('2026-08');
   const [attendanceStatus, setAttendanceStatus] = useState<Record<string, 'scheduled' | 'completed' | 'sick' | 'vacation'>>({});
   const [closedMonths, setClosedMonths] = useState<Record<string, boolean>>({});
+  const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
+  const [vacationStart, setVacationStart] = useState('2026-08-03');
+  const [vacationEnd, setVacationEnd] = useState('2026-08-09');
   const [attendanceLoaded, setAttendanceLoaded] = useState(false);
   const [annualYear, setAnnualYear] = useState(2026);
   const [toast, setToast] = useState('');
@@ -99,11 +104,15 @@ export default function Home() {
     }
     const savedAttendance = window.localStorage.getItem('contrata-hogar-attendance');
     if (savedAttendance) {
-      try { setAttendanceStatus(JSON.parse(savedAttendance)); } catch { /* ignore invalid local data */ }
+      try { const parsed = JSON.parse(savedAttendance) as Record<string, 'scheduled' | 'completed' | 'sick' | 'vacation'>; setAttendanceStatus(Object.fromEntries(Object.entries(parsed).filter(([, status]) => status !== 'vacation'))); } catch { /* ignore invalid local data */ }
     }
     const savedClosedMonths = window.localStorage.getItem('contrata-hogar-closed-months');
     if (savedClosedMonths) {
       try { setClosedMonths(JSON.parse(savedClosedMonths)); } catch { /* ignore invalid local data */ }
+    }
+    const savedVacationPeriods = window.localStorage.getItem('contrata-hogar-vacation-periods');
+    if (savedVacationPeriods) {
+      try { setVacationPeriods(JSON.parse(savedVacationPeriods)); } catch { /* ignore invalid local data */ }
     }
     setAttendanceLoaded(true);
   }, []);
@@ -112,8 +121,9 @@ export default function Home() {
     if (attendanceLoaded) {
       window.localStorage.setItem('contrata-hogar-attendance', JSON.stringify(attendanceStatus));
       window.localStorage.setItem('contrata-hogar-closed-months', JSON.stringify(closedMonths));
+      window.localStorage.setItem('contrata-hogar-vacation-periods', JSON.stringify(vacationPeriods));
     }
-  }, [attendanceLoaded, attendanceStatus, closedMonths]);
+  }, [attendanceLoaded, attendanceStatus, closedMonths, vacationPeriods]);
 
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
   const contributions = useMemo(() => socialSecurity2026(salary), [salary]);
@@ -127,7 +137,11 @@ export default function Home() {
   const attendanceDays = useMemo(() => monthWorkdays(attendanceMonth, contract.scheduleEntries || [], contract.startDate), [attendanceMonth, contract.scheduleEntries, contract.startDate]);
   const payrollPrepared = Boolean(closedMonths[attendanceMonth]);
   const setPayrollPrepared = (ready: boolean) => setClosedMonths(previous => ({ ...previous, [attendanceMonth]: ready }));
-  const completedAttendanceDays = attendanceDays.filter(day => attendanceStatus[day.key] && attendanceStatus[day.key] !== 'scheduled').length;
+  const isVacationDate = (date: Date) => {
+    const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return vacationPeriods.some(period => value >= period.start && value <= period.end);
+  };
+  const reviewedAttendanceDays = attendanceDays.filter(day => isVacationDate(day.date) || attendanceStatus[day.key] === 'completed' || attendanceStatus[day.key] === 'sick').length;
   const annualMonths = useMemo(() => Array.from({ length: 12 }, (_, index) => {
     const month = `${annualYear}-${String(index + 1).padStart(2, '0')}`;
     const days = monthWorkdays(month, contract.scheduleEntries || [], contract.startDate);
@@ -135,15 +149,15 @@ export default function Home() {
       month,
       label: new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(new Date(annualYear, index, 1)),
       planned: days.length,
-      worked: days.filter(day => attendanceStatus[day.key] === 'completed').length,
-      sick: days.filter(day => attendanceStatus[day.key] === 'sick').length,
-      vacation: days.filter(day => attendanceStatus[day.key] === 'vacation').length,
+      worked: days.filter(day => !isVacationDate(day.date) && attendanceStatus[day.key] === 'completed').length,
+      sick: days.filter(day => !isVacationDate(day.date) && attendanceStatus[day.key] === 'sick').length,
+      vacation: days.filter(day => isVacationDate(day.date)).length,
     };
-  }), [annualYear, attendanceStatus, contract.scheduleEntries, contract.startDate]);
+  }), [annualYear, attendanceStatus, contract.scheduleEntries, contract.startDate, vacationPeriods]);
   const annualTotals = annualMonths.reduce((total, month) => ({ planned: total.planned + month.planned, worked: total.worked + month.worked, sick: total.sick + month.sick, vacation: total.vacation + month.vacation }), { planned: 0, worked: 0, sick: 0, vacation: 0 });
   const contractualDaysPerWeek = Math.max(1, new Set((contract.scheduleEntries || []).map(entry => entry.day)).size);
-  const naturalDaysPerVacationShift = 7 / contractualDaysPerWeek;
-  const vacationNaturalDays = cents(annualTotals.vacation * naturalDaysPerVacationShift);
+  const vacationPeriodsForYear = vacationPeriods.filter(period => new Date(`${period.start}T12:00:00`).getFullYear() === annualYear);
+  const vacationNaturalDays = vacationPeriodsForYear.reduce((total, period) => total + calendarDays(period.start, period.end), 0);
   const yearStart = new Date(annualYear, 0, 1);
   const yearEnd = new Date(annualYear, 11, 31);
   const contractStart = new Date(`${contract.startDate}T00:00:00`);
@@ -159,6 +173,33 @@ export default function Home() {
     setAttendanceMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
   };
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
+  const setVacationPreset = (days: number) => {
+    if (!vacationStart) return;
+    const end = new Date(`${vacationStart}T12:00:00`); end.setDate(end.getDate() + days - 1);
+    setVacationEnd(`${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`);
+  };
+  const addVacationPeriod = () => {
+    const days = calendarDays(vacationStart, vacationEnd);
+    if (!vacationStart || !vacationEnd || days <= 0) { notify('Revisa las fechas del periodo de vacaciones'); return; }
+    if (vacationStart.slice(0, 4) !== vacationEnd.slice(0, 4)) { notify('Registra por separado las vacaciones de cada año natural'); return; }
+    if (vacationPeriods.some(period => vacationStart <= period.end && vacationEnd >= period.start)) { notify('Este periodo se solapa con otras vacaciones'); return; }
+    const affectedClosedMonth = Object.keys(closedMonths).find(month => closedMonths[month] && vacationStart.slice(0, 7) <= month && vacationEnd.slice(0, 7) >= month);
+    if (affectedClosedMonth) { notify(`Abre primero ${monthLabel(affectedClosedMonth)} para añadir vacaciones`); return; }
+    const year = new Date(`${vacationStart}T12:00:00`).getFullYear();
+    const used = vacationPeriods.filter(period => new Date(`${period.start}T12:00:00`).getFullYear() === year).reduce((total, period) => total + calendarDays(period.start, period.end), 0);
+    const startOfYear = new Date(year, 0, 1), endOfYear = new Date(year, 11, 31), start = new Date(`${contract.startDate}T00:00:00`);
+    const entitlementFrom = start > startOfYear ? start : startOfYear;
+    const entitlement = entitlementFrom > endOfYear ? 0 : cents(contract.vacationDays * ((endOfYear.getTime() - entitlementFrom.getTime()) / 86400000 + 1) / ((endOfYear.getTime() - startOfYear.getTime()) / 86400000 + 1));
+    if (used + days > entitlement + .01) { notify(`El periodo supera el saldo disponible de ${entitlement.toLocaleString('es-ES')} días`); return; }
+    setVacationPeriods([...vacationPeriods, { id: `${Date.now()}`, start: vacationStart, end: vacationEnd }].sort((a, b) => a.start.localeCompare(b.start)));
+    notify(`Periodo de ${days} días naturales añadido`);
+  };
+  const removeVacationPeriod = (period: VacationPeriod) => {
+    const affectedClosedMonth = Object.keys(closedMonths).find(month => closedMonths[month] && period.start.slice(0, 7) <= month && period.end.slice(0, 7) >= month);
+    if (affectedClosedMonth) { notify(`Abre primero ${monthLabel(affectedClosedMonth)} para modificar sus vacaciones`); return; }
+    setVacationPeriods(vacationPeriods.filter(item => item.id !== period.id));
+    notify('Periodo de vacaciones eliminado');
+  };
   const updateSchedule = (index: number, update: Partial<ScheduleEntry>) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...update } : entry) });
   const addSchedule = () => setDraft({ ...draft, scheduleEntries: [...draft.scheduleEntries, { day: 'Lunes', start: '10:00', end: '13:00' }] });
   const removeSchedule = (index: number) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.filter((_, entryIndex) => entryIndex !== index) });
@@ -326,9 +367,9 @@ export default function Home() {
 
         {activeView === 'contract' && <section className="app-view contract-view"><div className="view-head"><div><span>RELACIÓN LABORAL</span><h2>Contrato y ficha de la empleada</h2><p>Los datos se definen una sola vez en el contrato y alimentan el resto de la aplicación.</p></div></div><section className="contract-card" id="contrato"><div className="contract-icon">▧</div><div className="contract-copy"><span>{contractReady ? 'LISTO PARA REVISAR Y FIRMAR' : 'BORRADOR INCOMPLETO'}</span><h2>Contrato indefinido · Tiempo parcial</h2><p>{contract.weeklyHours.toLocaleString('es-ES')} horas semanales · {euro(contract.hourlyRate)}/hora · {euro(salary)} brutos/mes</p><div className="contract-checks"><span>{partiesComplete ? '✓ Datos de ambas partes completos' : '○ Faltan datos obligatorios'}</span><span>{Math.abs(contractScheduleHours - contract.weeklyHours) < .01 ? '✓ Horario y jornada coinciden' : `○ El horario suma ${contractScheduleHours.toLocaleString('es-ES')} h`}</span></div></div><div className="contract-actions"><button onClick={openContractWizard}>Completar contrato</button><button disabled={!contractReady} title={contractReady ? 'Descargar borrador' : 'Completa los datos y corrige el horario'} onClick={() => generateContract(false)}>Generar borrador PDF</button><button className="primary" disabled={!contractReady} title={contractReady ? 'Generar versión definitiva' : 'Completa los datos y corrige el horario'} onClick={confirmFinalContract}>Confirmar y generar definitivo</button><button onClick={generateManagementSheet}>Ficha interna PDF</button></div></section><article className="person" id="persona"><div className="personhead"><b>{contract.employeeName ? contract.employeeName.slice(0, 2).toUpperCase() : 'TR'}</b><p><strong>{contract.employeeName || 'Persona trabajadora'}</strong><small>Ficha informativa · Contrato indefinido activo</small></p><span className="source-badge">Datos del contrato</span></div><dl><div><dt>Antigüedad</dt><dd>{seniority(contract.startDate)}<small>Inicio: {formatDate(contract.startDate)}</small></dd></div><div><dt>Jornada</dt><dd>{contract.weeklyHours.toLocaleString('es-ES')} h / semana<small>Horario acordado</small></dd></div><div><dt>Salario por hora</dt><dd>{euro(contract.hourlyRate)}<small>{euro(salary)} brutos / mes estimados</small></dd></div></dl></article></section>}
 
-        {activeView === 'attendance' && <section className="app-view"><div className="view-head attendance-head"><div><span>CONTROL MENSUAL</span><h2>Revisar asistencia</h2><p>{payrollPrepared ? 'El mes está cerrado. Reábrelo para modificar cualquier jornada.' : 'Confirma cada jornada o registra baja o vacaciones antes de cerrar el mes.'}</p></div><span className={`status-pill ${payrollPrepared ? 'ok' : ''}`}>{payrollPrepared ? 'Mes cerrado' : `${completedAttendanceDays}/${attendanceDays.length} revisadas`}</span></div><div className="month-selector"><button aria-label="Mes anterior" onClick={() => moveAttendanceMonth(-1)}>‹</button><label>Mes<input type="month" value={attendanceMonth} onChange={event => setAttendanceMonth(event.target.value)} /></label><strong>{monthLabel(attendanceMonth)}</strong><button aria-label="Mes siguiente" onClick={() => moveAttendanceMonth(1)}>›</button></div><div className="attendance-summary"><div><span>Horas previstas</span><strong>{contract.weeklyHours.toLocaleString('es-ES')} h/semana</strong></div><div><span>Horario contractual</span><strong>{scheduleText(contract.scheduleEntries)}</strong></div></div><div className="attendance-list">{attendanceDays.length ? attendanceDays.map(({ key, date, entry }) => { const status = attendanceStatus[key] || 'scheduled'; const formatted = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).format(date); return <article key={key} className={payrollPrepared ? 'locked' : ''}><div className="attendance-day-number"><b>{date.getDate()}</b><small>{new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(date).replace('.', '')}</small></div><div className="attendance-date"><b>{formatted.charAt(0).toUpperCase() + formatted.slice(1)}</b><small>{entry.start}–{entry.end}</small></div><span className={`attendance-state ${status}`}>{status === 'completed' ? 'Confirmada' : status === 'sick' ? 'Baja' : status === 'vacation' ? 'Vacaciones' : 'Pendiente'}</span><div className="attendance-actions"><button disabled={payrollPrepared} className={status === 'completed' ? 'selected' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'completed' })}>Confirmar</button><button disabled={payrollPrepared} className={status === 'sick' ? 'selected sick' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'sick' })}>Baja</button><button disabled={payrollPrepared} className={status === 'vacation' ? 'selected vacation' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'vacation' })}>Vacaciones</button></div></article>}) : <div className="empty-month">No hay jornadas contractuales previstas en este mes.</div>}</div>{payrollPrepared ? <button className="view-secondary" onClick={() => { setPayrollPrepared(false); notify(`${monthLabel(attendanceMonth)} abierto de nuevo`); }}>Abrir mes de nuevo</button> : <button className="view-primary" disabled={!attendanceDays.length || completedAttendanceDays < attendanceDays.length} onClick={() => { setPayrollPrepared(true); notify(`Mes cerrado y recibo de ${monthLabel(attendanceMonth)} disponible`); }}>Cerrar mes y generar recibo</button>}</section>}
+        {activeView === 'attendance' && <section className="app-view"><div className="view-head attendance-head"><div><span>CONTROL MENSUAL</span><h2>Revisar asistencia</h2><p>{payrollPrepared ? 'El mes está cerrado. Reábrelo para modificar cualquier jornada.' : 'Confirma cada jornada o registra una baja. Las vacaciones se gestionan por periodos desde el resumen anual.'}</p></div><span className={`status-pill ${payrollPrepared ? 'ok' : ''}`}>{payrollPrepared ? 'Mes cerrado' : `${reviewedAttendanceDays}/${attendanceDays.length} revisadas`}</span></div><div className="month-selector"><button aria-label="Mes anterior" onClick={() => moveAttendanceMonth(-1)}>‹</button><label>Mes<input type="month" value={attendanceMonth} onChange={event => setAttendanceMonth(event.target.value)} /></label><strong>{monthLabel(attendanceMonth)}</strong><button aria-label="Mes siguiente" onClick={() => moveAttendanceMonth(1)}>›</button></div><div className="attendance-summary"><div><span>Horas previstas</span><strong>{contract.weeklyHours.toLocaleString('es-ES')} h/semana</strong></div><div><span>Horario contractual</span><strong>{scheduleText(contract.scheduleEntries)}</strong></div></div><div className="attendance-list">{attendanceDays.length ? attendanceDays.map(({ key, date, entry }) => { const vacation = isVacationDate(date); const status = vacation ? 'vacation' : attendanceStatus[key] || 'scheduled'; const formatted = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }).format(date); return <article key={key} className={payrollPrepared || vacation ? 'locked' : ''}><div className="attendance-day-number"><b>{date.getDate()}</b><small>{new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(date).replace('.', '')}</small></div><div className="attendance-date"><b>{formatted.charAt(0).toUpperCase() + formatted.slice(1)}</b><small>{entry.start}–{entry.end}</small></div><span className={`attendance-state ${status}`}>{status === 'completed' ? 'Confirmada' : status === 'sick' ? 'Baja' : status === 'vacation' ? 'Vacaciones' : 'Pendiente'}</span>{vacation ? <small className="vacation-origin">Periodo de vacaciones</small> : <div className="attendance-actions"><button disabled={payrollPrepared} className={status === 'completed' ? 'selected' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'completed' })}>Confirmar</button><button disabled={payrollPrepared} className={status === 'sick' ? 'selected sick' : ''} onClick={() => setAttendanceStatus({ ...attendanceStatus, [key]: 'sick' })}>Baja</button></div>}</article>}) : <div className="empty-month">No hay jornadas contractuales previstas en este mes.</div>}</div>{payrollPrepared ? <button className="view-secondary" onClick={() => { setPayrollPrepared(false); notify(`${monthLabel(attendanceMonth)} abierto de nuevo`); }}>Abrir mes de nuevo</button> : <button className="view-primary" disabled={!attendanceDays.length || reviewedAttendanceDays < attendanceDays.length} onClick={() => { setPayrollPrepared(true); notify(`Mes cerrado y recibo de ${monthLabel(attendanceMonth)} disponible`); }}>Cerrar mes y generar recibo</button>}</section>}
 
-        {activeView === 'annual' && <section className="app-view annual-view"><div className="view-head"><div><span>PLANIFICACIÓN</span><h2>Resumen anual</h2><p>Vista consolidada de asistencia, bajas y vacaciones registradas.</p></div><div className="year-selector"><button aria-label="Año anterior" onClick={() => setAnnualYear(annualYear - 1)}>‹</button><strong>{annualYear}</strong><button aria-label="Año siguiente" onClick={() => setAnnualYear(annualYear + 1)}>›</button></div></div><div className="annual-cards"><article><span>Jornadas previstas</span><strong>{annualTotals.planned}</strong><small>Según el contrato</small></article><article><span>Jornadas trabajadas</span><strong>{annualTotals.worked}</strong><small>Confirmadas</small></article><article><span>Bajas</span><strong>{annualTotals.sick}</strong><small>Jornadas registradas</small></article><article className="vacation-card"><span>Vacaciones disfrutadas</span><strong>{vacationNaturalDays.toLocaleString('es-ES')} días</strong><small>{annualTotals.vacation} jornadas × {naturalDaysPerVacationShift.toLocaleString('es-ES')} días naturales</small></article><article className="remaining-card"><span>Saldo de vacaciones</span><strong>{vacationRemaining.toLocaleString('es-ES')} días</strong><small>De {vacationEntitlement.toLocaleString('es-ES')} días generados en {annualYear}</small></article></div><div className="vacation-explanation"><b>Cómo se calcula el saldo</b><p>En {annualYear} corresponden {vacationEntitlement.toLocaleString('es-ES')} días naturales: 30 días por año completo, prorrateados desde el inicio del contrato cuando comienza durante el año. Como la jornada se distribuye en {contractualDaysPerWeek} días semanales, cada jornada marcada como vacaciones consume {naturalDaysPerVacationShift.toLocaleString('es-ES')} días naturales.</p></div><div className="annual-table"><div className="annual-table-head"><span>Mes</span><span>Previstas</span><span>Trabajadas</span><span>Bajas</span><span>Vacaciones</span></div>{annualMonths.map(month => <div className="annual-table-row" key={month.month}><strong>{month.label}</strong><span>{month.planned}</span><span>{month.worked}</span><span>{month.sick}</span><span>{month.vacation ? `${month.vacation} (${cents(month.vacation * naturalDaysPerVacationShift).toLocaleString('es-ES')} naturales)` : '0'}</span></div>)}</div></section>}
+        {activeView === 'annual' && <section className="app-view annual-view"><div className="view-head"><div><span>PLANIFICACIÓN</span><h2>Resumen anual</h2><p>Vista consolidada de asistencia, bajas y periodos completos de vacaciones.</p></div><div className="year-selector"><button aria-label="Año anterior" onClick={() => setAnnualYear(annualYear - 1)}>‹</button><strong>{annualYear}</strong><button aria-label="Año siguiente" onClick={() => setAnnualYear(annualYear + 1)}>›</button></div></div><div className="annual-cards"><article><span>Jornadas previstas</span><strong>{annualTotals.planned}</strong><small>Según el contrato</small></article><article><span>Jornadas trabajadas</span><strong>{annualTotals.worked}</strong><small>Confirmadas</small></article><article><span>Bajas</span><strong>{annualTotals.sick}</strong><small>Jornadas registradas</small></article><article className="vacation-card"><span>Vacaciones disfrutadas</span><strong>{vacationNaturalDays.toLocaleString('es-ES')} días</strong><small>{annualTotals.vacation} jornadas contractuales incluidas</small></article><article className="remaining-card"><span>Saldo de vacaciones</span><strong>{vacationRemaining.toLocaleString('es-ES')} días</strong><small>De {vacationEntitlement.toLocaleString('es-ES')} días generados en {annualYear}</small></article></div><section className="vacation-manager"><div><span>VACACIONES</span><h3>Añadir periodo</h3><p>Selecciona fechas naturales completas. Las jornadas de trabajo incluidas se marcarán automáticamente.</p></div><div className="vacation-form"><label>Desde<input type="date" value={vacationStart} onChange={event => setVacationStart(event.target.value)} /></label><label>Hasta<input type="date" value={vacationEnd} onChange={event => setVacationEnd(event.target.value)} /></label><div className="vacation-presets"><button onClick={() => setVacationPreset(7)}>1 semana · 7 días</button><button onClick={() => setVacationPreset(14)}>2 semanas · 14 días</button><button onClick={() => setVacationPreset(15)}>Periodo mínimo · 15 días</button></div><button className="primary" onClick={addVacationPeriod}>Añadir periodo</button></div><div className="vacation-periods">{vacationPeriodsForYear.length ? vacationPeriodsForYear.map(period => <article key={period.id}><div><strong>{formatDate(period.start)} — {formatDate(period.end)}</strong><small>{calendarDays(period.start, period.end)} días naturales{calendarDays(period.start, period.end) >= 15 ? ' · Cumple el periodo mínimo' : ''}</small></div><button onClick={() => setVacationPeriods(vacationPeriods.filter(item => item.id !== period.id))}>Eliminar</button></article>) : <p>No hay periodos de vacaciones registrados en {annualYear}.</p>}</div><div className={`vacation-rule ${vacationPeriodsForYear.some(period => calendarDays(period.start, period.end) >= 15) ? 'ok' : ''}`}>{vacationPeriodsForYear.some(period => calendarDays(period.start, period.end) >= 15) ? '✓ Existe un periodo de al menos 15 días naturales consecutivos.' : 'Pendiente: debe existir al menos un periodo de 15 días naturales consecutivos.'}</div></section><div className="vacation-explanation"><b>Cómo se calcula el saldo</b><p>En {annualYear} corresponden {vacationEntitlement.toLocaleString('es-ES')} días naturales, prorrateados desde el inicio del contrato. Cada periodo descuenta los días naturales comprendidos entre su fecha inicial y final. Una semana completa consume 7 días y marca automáticamente las {contractualDaysPerWeek} jornadas contractuales comprendidas.</p></div><div className="annual-table"><div className="annual-table-head"><span>Mes</span><span>Previstas</span><span>Trabajadas</span><span>Bajas</span><span>Vacaciones</span></div>{annualMonths.map(month => <div className="annual-table-row" key={month.month}><strong>{month.label}</strong><span>{month.planned}</span><span>{month.worked}</span><span>{month.sick}</span><span>{month.vacation}</span></div>)}</div></section>}
 
         {activeView === 'documents' && <section className="app-view"><div className="view-head"><div><span>ARCHIVO</span><h2>Documentos</h2><p>Contrato, recibos salariales y documentos internos, siempre separados.</p></div></div><div className="document-grid"><article><b>PDF</b><h3>Borrador del contrato</h3><p>Versión para revisar antes de confirmar.</p><button disabled={!contractReady} onClick={() => generateContract(false)}>Descargar</button></article><article><b>PDF</b><h3>Recibo de {monthLabel(attendanceMonth)}</h3><p>{payrollPrepared ? 'Disponible tras cerrar la asistencia' : 'Cierra primero la asistencia del mes'}</p><button disabled={!payrollPrepared} onClick={generateReceipt}>Descargar</button></article><article><b>PDF</b><h3>Ficha interna</h3><p>Estimaciones y registros de gestión.</p><button onClick={generateManagementSheet}>Descargar</button></article></div></section>}
       </div>
