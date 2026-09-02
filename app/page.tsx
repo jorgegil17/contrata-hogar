@@ -37,22 +37,33 @@ type Contract = {
   employeePostcode: string;
   workMunicipality: string;
   workPostcode: string;
+  contributionCommonBenefit: 'general20' | 'largeFamily45' | 'none';
+  unemploymentFogasaBonus: boolean;
+  professionalContingencyRate: number;
 };
-const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 6, hourlyRate: 12, workDays: 'Lunes y jueves', workAddress: '', schedule: '', scheduleEntries: [{ day: 'Lunes', start: '10:00', end: '13:00' }, { day: 'Jueves', start: '10:00', end: '13:00' }], paymentDay: 31, extraPays: 'prorated', trialPeriod: 0, hasTrialPeriod: false, vacationDays: 30, signaturePlace: '', signatureDate: '', employerName: '', employerDni: '', employerAddress: '', employerMunicipality: '', employerPostcode: '', contributionAccount: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '', employeeBirthDate: '', employeeNationality: 'Española', employeeMunicipality: '', employeePostcode: '', workMunicipality: '', workPostcode: '' };
-const euro = (n: number) => n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const defaults: Contract = { startDate: '2026-02-15', weeklyHours: 6, hourlyRate: 12, workDays: 'Lunes y jueves', workAddress: '', schedule: '', scheduleEntries: [{ day: 'Lunes', start: '10:00', end: '13:00' }, { day: 'Jueves', start: '10:00', end: '13:00' }], paymentDay: 31, extraPays: 'prorated', trialPeriod: 0, hasTrialPeriod: false, vacationDays: 30, signaturePlace: '', signatureDate: '', employerName: '', employerDni: '', employerAddress: '', employerMunicipality: '', employerPostcode: '', contributionAccount: '', employeeName: '', employeeDni: '', employeeNss: '', employeeAddress: '', employeeBirthDate: '', employeeNationality: 'Española', employeeMunicipality: '', employeePostcode: '', workMunicipality: '', workPostcode: '', contributionCommonBenefit: 'general20', unemploymentFogasaBonus: true, professionalContingencyRate: 1.5 };
+const euro = (n: number) => Number.isFinite(n) ? n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €' : 'Sin cálculo';
 const scheduleHours = (entries: ScheduleEntry[]) => entries.reduce((total, entry) => { const [startHour, startMinute] = entry.start.split(':').map(Number); const [endHour, endMinute] = entry.end.split(':').map(Number); const minutes = endHour * 60 + endMinute - startHour * 60 - startMinute; return total + (minutes > 0 ? minutes / 60 : 0); }, 0);
 const scheduleText = (entries: ScheduleEntry[]) => entries.map(entry => `${entry.day}, de ${entry.start} a ${entry.end}`).join('; ');
 const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 const calendarDays = (start: string, end: string) => Math.floor((new Date(`${end}T12:00:00`).getTime() - new Date(`${start}T12:00:00`).getTime()) / 86400000) + 1;
-const socialSecurity2026 = (grossSalary: number) => {
-  const brackets = [[329, 306], [510, 436], [693, 602], [877, 785], [1061, 970], [1242, 1151], [1424.40, 1424.40]];
-  const base = brackets.find(([limit]) => grossSalary <= limit)?.[1] ?? grossSalary;
-  const worker = cents(base * .047) + cents(base * .0155) + cents(base * .0015);
-  const commonEmployer = cents(base * .236) - cents(base * .236 * .20);
-  const unemploymentEmployer = cents(base * .055) - cents(base * .055 * .80);
-  const fogasaEmployer = cents(base * .002) - cents(base * .002 * .80);
-  const employer = cents(commonEmployer + unemploymentEmployer + fogasaEmployer + cents(base * .0075) + cents(base * .015));
-  return { base: cents(base), worker: cents(worker), employer, directDebit: cents(worker + employer), net: cents(grossSalary - worker), totalCost: cents(grossSalary + employer) };
+const contributionRules: Record<number, { brackets: number[][]; commonWorker: number; commonEmployer: number; unemploymentWorker: number; unemploymentEmployer: number; fogasaEmployer: number; meiWorker: number; meiEmployer: number }> = {
+  2024: { brackets: [[306,284],[474,405],[644,559],[814,729],[986,901],[1153,1069],[1323,1323]], commonWorker:.047, commonEmployer:.236, unemploymentWorker:.0155, unemploymentEmployer:.055, fogasaEmployer:.002, meiWorker:.0012, meiEmployer:.0058 },
+  2025: { brackets: [[319,296],[495,423],[672,584],[850,761],[1029,941],[1204,1116],[1381.20,1381.20]], commonWorker:.047, commonEmployer:.236, unemploymentWorker:.0155, unemploymentEmployer:.055, fogasaEmployer:.002, meiWorker:.0013, meiEmployer:.0067 },
+  2026: { brackets: [[329,306],[510,436],[693,602],[877,785],[1061,970],[1242,1151],[1424.40,1424.40]], commonWorker:.047, commonEmployer:.236, unemploymentWorker:.0155, unemploymentEmployer:.055, fogasaEmployer:.002, meiWorker:.0015, meiEmployer:.0075 },
+};
+const socialSecurity = (grossSalary: number, year: number, commonBenefit: Contract['contributionCommonBenefit'], unemploymentFogasaBonus: boolean, professionalRate: number) => {
+  const rules = contributionRules[year];
+  if (!rules) return { supported: false, year, base: NaN, worker: NaN, employer: NaN, directDebit: NaN, net: NaN, totalCost: NaN };
+  const base = rules.brackets.find(([limit]) => grossSalary <= limit)?.[1] ?? grossSalary;
+  const commonReduction = commonBenefit === 'general20' ? .20 : commonBenefit === 'largeFamily45' ? .45 : 0;
+  const bonus = unemploymentFogasaBonus ? .80 : 0;
+  const worker = cents(base * rules.commonWorker) + cents(base * rules.unemploymentWorker) + cents(base * rules.meiWorker);
+  const commonEmployer = cents(base * rules.commonEmployer) - cents(base * rules.commonEmployer * commonReduction);
+  const unemploymentEmployer = cents(base * rules.unemploymentEmployer) - cents(base * rules.unemploymentEmployer * bonus);
+  const fogasaEmployer = cents(base * rules.fogasaEmployer) - cents(base * rules.fogasaEmployer * bonus);
+  const employer = cents(commonEmployer + unemploymentEmployer + fogasaEmployer + cents(base * rules.meiEmployer) + cents(base * professionalRate / 100));
+  return { supported: true, year, base: cents(base), worker: cents(worker), employer, directDebit: cents(worker + employer), net: cents(grossSalary - worker), totalCost: cents(grossSalary + employer) };
 };
 const weekdayNumbers: Record<string, number> = { Domingo: 0, Lunes: 1, Martes: 2, Miércoles: 3, Jueves: 4, Viernes: 5, Sábado: 6 };
 const monthLabel = (value: string) => {
@@ -138,7 +149,8 @@ export default function Home() {
   }, [attendanceLoaded, attendanceStatus, closedMonths, vacationPeriods]);
 
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
-  const contributions = useMemo(() => socialSecurity2026(salary), [salary]);
+  const contributionYear = Number(attendanceMonth.slice(0, 4));
+  const contributions = useMemo(() => socialSecurity(salary, contributionYear, contract.contributionCommonBenefit, contract.unemploymentFogasaBonus, contract.professionalContingencyRate), [salary, contributionYear, contract.contributionCommonBenefit, contract.unemploymentFogasaBonus, contract.professionalContingencyRate]);
   const deduction = contributions.worker;
   const net = contributions.net;
   const contractScheduleHours = scheduleHours(contract.scheduleEntries || []);
@@ -185,6 +197,12 @@ export default function Home() {
     setAttendanceMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
   };
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600); };
+  const updateContributionSettings = (update: Partial<Pick<Contract, 'contributionCommonBenefit' | 'unemploymentFogasaBonus' | 'professionalContingencyRate'>>) => {
+    const updated = { ...contract, ...update };
+    setContract(updated); setDraft(updated);
+    window.localStorage.setItem('contrata-hogar-contract', JSON.stringify(updated));
+    notify('Supuestos de cotización actualizados');
+  };
   const setVacationPreset = (days: number) => {
     if (!vacationStart) return;
     const end = new Date(`${vacationStart}T12:00:00`); end.setDate(end.getDate() + days - 1);
@@ -224,6 +242,7 @@ export default function Home() {
     notify('Datos contractuales guardados en este dispositivo');
   };
   const generateReceipt = () => {
+    if (!contributions.supported) { notify(`No hay reglas de cotización verificadas para ${contributionYear}`); return; }
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
     const [year, month] = attendanceMonth.split('-').map(Number);
     const days = new Date(year, month, 0).getDate();
@@ -264,13 +283,13 @@ export default function Home() {
     pdf.setDrawColor(118, 137, 145).rect(left, 226, width, 46);
     pdf.setFillColor(237, 247, 252).rect(left, 226, width, 8, 'F');
     pdf.setTextColor(23, 36, 43).setFont('helvetica', 'bold').setFontSize(8).text('COSTE Y COTIZACIÓN DE LA PERSONA EMPLEADORA', left + 3, 231.5);
-    pdf.setFont('helvetica', 'normal').setFontSize(6.8).text('Base de cotización 2026', left + 3, 239).text(euro(contributions.base), 190, 239, { align: 'right' });
+    pdf.setFont('helvetica', 'normal').setFontSize(6.8).text(`Base de cotización ${contributionYear}`, left + 3, 239).text(euro(contributions.base), 190, 239, { align: 'right' });
     pdf.text('Aportación de la persona trabajadora incluida en el cargo', left + 3, 245).text(euro(contributions.worker), 190, 245, { align: 'right' });
     pdf.text('Aportación a cargo de la persona empleadora', left + 3, 251).text(euro(employerContribution), 190, 251, { align: 'right' });
     pdf.setFont('helvetica', 'bold').text('CARGO TOTAL DOMICILIADO DE SEGURIDAD SOCIAL', left + 3, 258).text(euro(contributions.directDebit), 190, 258, { align: 'right' });
     pdf.setDrawColor(205, 217, 223).line(left + 3, 262, 192, 262);
     pdf.setFontSize(8).text('COSTE TOTAL', left + 3, 268).text(euro(familyTotal), 190, 268, { align: 'right' });
-    pdf.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(100, 115, 122).text('Cálculo orientativo 2026; el cargo definitivo es el liquidado por la Seguridad Social.', left, 277);
+    pdf.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(100, 115, 122).text(`Cálculo orientativo ${contributionYear}; el cargo definitivo es el liquidado por la Seguridad Social.`, left, 277);
     pdf.setFontSize(7).setTextColor(70, 85, 92).text('Pago previsto por transferencia bancaria', left, 281);
     pdf.text('Firma de la persona empleadora', left, 291).text('Recibí: persona trabajadora', 125, 291);
     pdf.save(`recibo-salario-${attendanceMonth}.pdf`); notify('Recibo de salario descargado');
@@ -328,8 +347,10 @@ export default function Home() {
   const generateManagementSheet = () => {
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
     const gross = +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2);
-    const socialSecurity = socialSecurity2026(gross);
-    const rows = [['Salario bruto mensual', euro(gross)], ['Base de cotización 2026', euro(socialSecurity.base)], ['Aportación trabajadora', euro(socialSecurity.worker)], ['Neto a transferir', euro(socialSecurity.net)], ['Cuota empleadora', euro(socialSecurity.employer)], ['Cargo total Seguridad Social', euro(socialSecurity.directDebit)], ['Coste total', euro(socialSecurity.totalCost)], ['Día habitual de pago', `Día ${contract.paymentDay}`], ['Fecha de alta prevista', formatDate(contract.startDate)], ['Fecha de baja', 'Sin registrar']];
+    const sheetYear = Number(contract.startDate.slice(0, 4));
+    const socialSecurityEstimate = socialSecurity(gross, sheetYear, contract.contributionCommonBenefit, contract.unemploymentFogasaBonus, contract.professionalContingencyRate);
+    if (!socialSecurityEstimate.supported) { notify(`No hay reglas de cotización verificadas para ${sheetYear}`); return; }
+    const rows = [['Ejercicio de cálculo', String(sheetYear)], ['Salario bruto mensual', euro(gross)], [`Base de cotización ${sheetYear}`, euro(socialSecurityEstimate.base)], ['Aportación trabajadora', euro(socialSecurityEstimate.worker)], ['Neto a transferir', euro(socialSecurityEstimate.net)], ['Cuota empleadora', euro(socialSecurityEstimate.employer)], ['Cargo total Seguridad Social', euro(socialSecurityEstimate.directDebit)], ['Coste total', euro(socialSecurityEstimate.totalCost)], ['Día habitual de pago', `Día ${contract.paymentDay}`], ['Fecha de alta prevista', formatDate(contract.startDate)], ['Fecha de baja', 'Sin registrar']];
     pdf.setTextColor(8, 125, 189).setFont('helvetica', 'bold').setFontSize(9).text('CONTRATA HOGAR · DOCUMENTO INTERNO', 20, 20);
     pdf.setTextColor(23, 36, 43).setFontSize(21).text('Ficha interna de gestión', 20, 32);
     pdf.setFont('helvetica', 'normal').setFontSize(9).setTextColor(95, 117, 128).text('No forma parte del contrato firmado', 20, 39);
@@ -356,6 +377,7 @@ export default function Home() {
     <section className="workspace" id="top">
       <header><div><small>DOMINGO, 30 DE AGOSTO</small><h1>{activeView === 'home' ? 'Buenos días, Jorge' : activeView === 'contract' ? 'Contrato' : activeView === 'attendance' ? 'Asistencia' : activeView === 'annual' ? 'Resumen anual' : 'Documentos'}</h1></div><button className="help" onClick={() => notify('Centro de ayuda: disponible en la siguiente versión')}>ⓘ Ayuda</button></header>
       <div className="content">
+        {activeView === 'contract' && <section className="contribution-settings"><div className="contribution-settings-head"><div><span>COTIZACIÓN ESTIMADA</span><h3>Supuestos aplicados</h3><p>Reglas oficiales versionadas por ejercicio. Comprueba en Importass qué beneficios reconoce la TGSS.</p></div><strong>{contributions.supported ? `Ejercicio ${contributionYear}` : `${contributionYear} sin reglas verificadas`}</strong></div><div className="contribution-settings-grid"><label>Beneficio en contingencias comunes<select value={contract.contributionCommonBenefit} onChange={event => updateContributionSettings({ contributionCommonBenefit: event.target.value as Contract['contributionCommonBenefit'] })}><option value="general20">Reducción general del 20 %</option><option value="largeFamily45">Bonificación del 45 % · familia numerosa</option><option value="none">Sin reducción ni bonificación</option></select><small>El 45 % es alternativo al 20 % y exige cumplir sus requisitos.</small></label><label className="toggle-setting"><span><b>Bonificación del 80 %</b><small>Desempleo y FOGASA</small></span><input type="checkbox" checked={contract.unemploymentFogasaBonus} onChange={event => updateContributionSettings({ unemploymentFogasaBonus: event.target.checked })} /></label><label>Contingencias profesionales (%)<input type="number" min="0" max="10" step="0.01" value={contract.professionalContingencyRate} onChange={event => updateContributionSettings({ professionalContingencyRate: Number(event.target.value) })} /><small>Tipo AT/EP asumido. Contrástalo con el aplicado por la TGSS.</small></label></div><div className="contribution-result"><div><span>Base</span><strong>{euro(contributions.base)}</strong></div><div><span>Aportación trabajadora</span><strong>{euro(contributions.worker)}</strong></div><div><span>Aportación empleadora</span><strong>{euro(contributions.employer)}</strong></div><div><span>Cargo total S. Social</span><strong>{euro(contributions.directDebit)}</strong></div></div><p className="contribution-warning">Estimación, no liquidación oficial. El importe válido es el cargo emitido por la Tesorería General de la Seguridad Social.</p></section>}
         {activeView === 'home' && <>
         <section className="hero"><div><label><i /> RELACIÓN LABORAL ACTIVA</label><h2>{payrollPrepared ? 'Recibo de nómina disponible' : 'Revisa la asistencia'}</h2><p>{payrollPrepared ? 'El mes está cerrado y ya puedes descargar el recibo salarial.' : 'Confirma las jornadas para cerrar el mes y generar la nómina.'}</p></div><div className="next"><span>Próxima acción</span><b>{payrollPrepared ? 'RECIBO' : 'ASISTENCIA'}</b><small>{payrollPrepared ? 'Disponible' : 'Pendiente'}</small></div></section>
         <Title title="Este mes" action="Abrir asistencia →" onClick={() => setActiveView('attendance')} />
