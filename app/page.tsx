@@ -8,6 +8,8 @@ type ScheduleEntry = { day: string; start: string; end: string };
 type VacationPeriod = { id: string; start: string; end: string };
 type MonthlyAdjustment = { endDate: string; additionalHours: number; holidayCompensation: number; sickLeaveDeduction: number; unpaidAbsenceDeduction: number; otherAdjustment: number; workerContributionOverride: number | null; employerContributionOverride: number | null; notes: string };
 const emptyMonthlyAdjustment: MonthlyAdjustment = { endDate: '', additionalHours: 0, holidayCompensation: 0, sickLeaveDeduction: 0, unpaidAbsenceDeduction: 0, otherAdjustment: 0, workerContributionOverride: null, employerContributionOverride: null, notes: '' };
+type ClosedMonthSnapshot = { id: string; month: string; revision: number; closedAt: string; integrity: string; pdfData: string; summary: { gross: number; worker: number; employer: number; net: number }; attendance: Record<string, string>; adjustment: MonthlyAdjustment };
+type ReopenEvent = { id: string; month: string; reopenedAt: string; reason: string; previousRevision: number };
 type Contract = {
   startDate: string;
   weeklyHours: number;
@@ -119,6 +121,8 @@ export default function Home() {
   const [vacationStart, setVacationStart] = useState('2026-08-03');
   const [vacationEnd, setVacationEnd] = useState('2026-08-09');
   const [monthlyAdjustments, setMonthlyAdjustments] = useState<Record<string, MonthlyAdjustment>>({});
+  const [closedMonthSnapshots, setClosedMonthSnapshots] = useState<ClosedMonthSnapshot[]>([]);
+  const [reopenEvents, setReopenEvents] = useState<ReopenEvent[]>([]);
   const [attendanceLoaded, setAttendanceLoaded] = useState(false);
   const [annualYear, setAnnualYear] = useState(2026);
   const [toast, setToast] = useState('');
@@ -144,6 +148,14 @@ export default function Home() {
     if (savedMonthlyAdjustments) {
       try { setMonthlyAdjustments(JSON.parse(savedMonthlyAdjustments)); } catch { /* ignore invalid local data */ }
     }
+    const savedSnapshots = window.localStorage.getItem('contrata-hogar-closed-snapshots');
+    if (savedSnapshots) {
+      try { setClosedMonthSnapshots(JSON.parse(savedSnapshots)); } catch { /* ignore invalid local data */ }
+    }
+    const savedReopenEvents = window.localStorage.getItem('contrata-hogar-reopen-events');
+    if (savedReopenEvents) {
+      try { setReopenEvents(JSON.parse(savedReopenEvents)); } catch { /* ignore invalid local data */ }
+    }
     setAttendanceLoaded(true);
   }, []);
 
@@ -153,8 +165,10 @@ export default function Home() {
       window.localStorage.setItem('contrata-hogar-closed-months', JSON.stringify(closedMonths));
       window.localStorage.setItem('contrata-hogar-vacation-periods', JSON.stringify(vacationPeriods));
       window.localStorage.setItem('contrata-hogar-monthly-adjustments', JSON.stringify(monthlyAdjustments));
+      window.localStorage.setItem('contrata-hogar-closed-snapshots', JSON.stringify(closedMonthSnapshots));
+      window.localStorage.setItem('contrata-hogar-reopen-events', JSON.stringify(reopenEvents));
     }
-  }, [attendanceLoaded, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments]);
+  }, [attendanceLoaded, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents]);
 
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
   const contributionYear = Number(attendanceMonth.slice(0, 4));
@@ -187,7 +201,14 @@ export default function Home() {
   const attendanceDays = useMemo(() => monthWorkdays(attendanceMonth, contract.scheduleEntries || [], contract.startDate), [attendanceMonth, contract.scheduleEntries, contract.startDate]);
   const payrollPrepared = Boolean(closedMonths[attendanceMonth]);
   const sickDaysInMonth = attendanceDays.filter(day => attendanceStatus[day.key] === 'sick').length;
-  const setPayrollPrepared = (ready: boolean) => setClosedMonths(previous => ({ ...previous, [attendanceMonth]: ready }));
+  const setPayrollPrepared = (ready: boolean) => {
+    if (ready) { void archiveCurrentMonth(); return; }
+    const reason = window.prompt('Indica brevemente por qué reabres el mes. Este motivo quedará en el historial.');
+    if (!reason?.trim()) { window.setTimeout(() => notify('Reapertura cancelada: falta indicar el motivo'), 0); return; }
+    const previousRevision = closedMonthSnapshots.filter(snapshot => snapshot.month === attendanceMonth).length;
+    setReopenEvents(previous => [...previous, { id: `${attendanceMonth}-${Date.now()}`, month: attendanceMonth, reopenedAt: new Date().toISOString(), reason: reason.trim(), previousRevision }]);
+    setClosedMonths(previous => ({ ...previous, [attendanceMonth]: false }));
+  };
   const isVacationDate = (date: Date) => {
     const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     return vacationPeriods.some(period => value >= period.start && value <= period.end);
@@ -272,7 +293,7 @@ export default function Home() {
     setContractWizard(false);
     notify('Datos contractuales guardados en este dispositivo');
   };
-  const generateReceipt = () => {
+  const buildReceipt = () => {
     if (!contributions.supported) { notify(`No hay reglas de cotización verificadas para ${contributionYear}`); return; }
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
     const period = monthLabel(attendanceMonth);
@@ -327,8 +348,35 @@ export default function Home() {
     pdf.setFont('helvetica', 'normal').setFontSize(6.5).setTextColor(100, 115, 122).text(`Cálculo orientativo ${contributionYear}; el cargo definitivo es el liquidado por la Seguridad Social.`, left, 277);
     pdf.setFontSize(7).setTextColor(70, 85, 92).text('Pago previsto por transferencia bancaria', left, 281);
     pdf.text('Firma de la persona empleadora', left, 291).text('Recibí: persona trabajadora', 125, 291);
-    pdf.save(`recibo-salario-${attendanceMonth}.pdf`); notify('Recibo de salario descargado');
+    return pdf;
   };
+  const generateReceipt = () => {
+    const archived = [...closedMonthSnapshots].reverse().find(snapshot => snapshot.month === attendanceMonth);
+    if (archived) { downloadArchivedReceipt(archived); return; }
+    const pdf = buildReceipt();
+    if (pdf) { pdf.save(`recibo-salario-${attendanceMonth}.pdf`); notify('Recibo de salario descargado'); }
+  };
+  async function downloadArchivedReceipt(snapshot: ClosedMonthSnapshot) {
+    const payload = { month: snapshot.month, revision: snapshot.revision, closedAt: snapshot.closedAt, summary: snapshot.summary, attendance: snapshot.attendance, adjustment: snapshot.adjustment };
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(payload) + snapshot.pdfData));
+    const currentIntegrity = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+    if (currentIntegrity !== snapshot.integrity) { notify('La copia archivada no supera la comprobación de integridad'); return; }
+    const anchor = document.createElement('a'); anchor.href = snapshot.pdfData; anchor.download = `recibo-salario-${snapshot.month}-revision-${snapshot.revision}.pdf`; anchor.click();
+    notify(`Copia archivada · revisión ${snapshot.revision}`);
+  }
+  async function archiveCurrentMonth() {
+    const pdf = buildReceipt();
+    if (!pdf) return;
+    const revision = closedMonthSnapshots.filter(snapshot => snapshot.month === attendanceMonth).length + 1;
+    const payload = { month: attendanceMonth, revision, closedAt: new Date().toISOString(), summary: { gross: monthlyGross, worker: contributions.worker, employer: contributions.employer, net }, attendance: Object.fromEntries(Object.entries(attendanceStatus).filter(([key]) => key.startsWith(attendanceMonth))), adjustment: monthAdjustment };
+    const pdfData = pdf.output('datauristring');
+    const encoded = new TextEncoder().encode(JSON.stringify(payload) + pdfData);
+    const digest = await crypto.subtle.digest('SHA-256', encoded);
+    const integrity = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+    const snapshot: ClosedMonthSnapshot = { id: `${attendanceMonth}-${revision}-${Date.now()}`, ...payload, integrity, pdfData };
+    setClosedMonthSnapshots(previous => [...previous, snapshot]);
+    setClosedMonths(previous => ({ ...previous, [attendanceMonth]: true }));
+  }
   const generateContract = async (finalDocument = false) => {
     if (!contractReady) { openContractWizard(); notify(Math.abs(contractScheduleHours - contract.weeklyHours) < .01 ? 'El documento está incompleto: revisa los datos obligatorios' : `El horario suma ${contractScheduleHours.toLocaleString('es-ES')} h y la jornada pactada es de ${contract.weeklyHours.toLocaleString('es-ES')} h`); return; }
     try {
@@ -415,6 +463,8 @@ export default function Home() {
         {activeView === 'contract' && <section className="contribution-settings"><div className="contribution-settings-head"><div><span>COTIZACIÓN ESTIMADA</span><h3>Supuestos aplicados</h3><p>Reglas oficiales versionadas por ejercicio. Comprueba en Importass qué beneficios reconoce la TGSS.</p></div><strong>{contributions.supported ? `Ejercicio ${contributionYear}` : `${contributionYear} sin reglas verificadas`}</strong></div><div className="contribution-settings-grid"><label>Beneficio en contingencias comunes<select value={contract.contributionCommonBenefit} onChange={event => updateContributionSettings({ contributionCommonBenefit: event.target.value as Contract['contributionCommonBenefit'] })}><option value="general20">Reducción general del 20 %</option><option value="largeFamily45">Bonificación del 45 % · familia numerosa</option><option value="none">Sin reducción ni bonificación</option></select><small>El 45 % es alternativo al 20 % y exige cumplir sus requisitos.</small></label><label className="toggle-setting"><span><b>Bonificación del 80 %</b><small>Desempleo y FOGASA</small></span><input type="checkbox" checked={contract.unemploymentFogasaBonus} onChange={event => updateContributionSettings({ unemploymentFogasaBonus: event.target.checked })} /></label><label>Contingencias profesionales (%)<input type="number" min="0" max="10" step="0.01" value={contract.professionalContingencyRate} onChange={event => updateContributionSettings({ professionalContingencyRate: Number(event.target.value) })} /><small>Tipo AT/EP asumido. Contrástalo con el aplicado por la TGSS.</small></label></div><div className="contribution-result"><div><span>Base</span><strong>{euro(contributions.base)}</strong></div><div><span>Aportación trabajadora</span><strong>{euro(contributions.worker)}</strong></div><div><span>Aportación empleadora</span><strong>{euro(contributions.employer)}</strong></div><div><span>Cargo total S. Social</span><strong>{euro(contributions.directDebit)}</strong></div></div><p className="contribution-warning">Estimación, no liquidación oficial. El importe válido es el cargo emitido por la Tesorería General de la Seguridad Social.</p></section>}
         {activeView === 'attendance' && <section className={`settlement-panel ${payrollPrepared ? 'locked' : ''}`}><div className="settlement-head"><div><span>LIQUIDACIÓN DE {monthLabel(attendanceMonth).toUpperCase()}</span><h3>Ajustes del recibo</h3><p>El salario base se prorratea automáticamente si el alta comienza o termina durante el mes.</p></div><strong>{activeSettlementDays} de {settlementDays} días en alta</strong></div><div className="settlement-fields"><label>Último día en alta durante este mes<input type="date" min={`${attendanceMonth}-01`} max={`${attendanceMonth}-${String(settlementDays).padStart(2, '0')}`} value={monthAdjustment.endDate} disabled={payrollPrepared} onChange={event => updateMonthAdjustment({ endDate: event.target.value })} /><small>Déjalo vacío si la relación continúa.</small></label><label>Horas adicionales (€)<input type="number" min="0" step="0.01" value={monthAdjustment.additionalHours} disabled={payrollPrepared} onChange={event => updateMonthAdjustment({ additionalHours: Number(event.target.value) })} /></label><label>Festivos trabajados (€)<input type="number" min="0" step="0.01" value={monthAdjustment.holidayCompensation} disabled={payrollPrepared} onChange={event => updateMonthAdjustment({ holidayCompensation: Number(event.target.value) })} /></label><label>Ajuste por baja médica (€)<input type="number" min="0" step="0.01" value={monthAdjustment.sickLeaveDeduction} disabled={payrollPrepared} onChange={event => updateMonthAdjustment({ sickLeaveDeduction: Number(event.target.value) })} /><small>{sickDaysInMonth ? `${sickDaysInMonth} jornada(s) marcada(s) como baja.` : 'Sin jornadas de baja registradas.'}</small></label><label>Ausencias no retribuidas (€)<input type="number" min="0" step="0.01" value={monthAdjustment.unpaidAbsenceDeduction} disabled={payrollPrepared} onChange={event => updateMonthAdjustment({ unpaidAbsenceDeduction: Number(event.target.value) })} /></label><label>Otra regularización (€)<input type="number" step="0.01" value={monthAdjustment.otherAdjustment} disabled={payrollPrepared} onChange={event => updateMonthAdjustment({ otherAdjustment: Number(event.target.value) })} /><small>Positiva para sumar; negativa para deducir.</small></label><label className="settlement-notes">Concepto u observaciones<textarea value={monthAdjustment.notes} disabled={payrollPrepared} onChange={event => updateMonthAdjustment({ notes: event.target.value })} placeholder="Ej.: 3 horas adicionales del 18 de agosto" /></label></div><div className="settlement-totals"><div><span>Salario base del periodo</span><strong>{euro(proratedSalary)}</strong></div><div><span>Bruto tras ajustes</span><strong>{euro(monthlyGross)}</strong></div><div><span>Neto estimado</span><strong>{euro(net)}</strong></div></div><p className="settlement-warning">La baja médica queda registrada en asistencia, pero su efecto económico debe introducirse con el importe comprobado. La app no deduce automáticamente días de incapacidad temporal.</p></section>}
         {activeView === 'attendance' && <section className="official-charge"><div><span>COTIZACIÓN DEL MES</span><h3>Importes reales de la TGSS</h3><p>Opcional. Si Importass o el cargo bancario muestra importes distintos, introdúcelos aquí y prevalecerán sobre la estimación.</p></div><label>Aportación trabajadora<input type="number" min="0" step="0.01" value={monthAdjustment.workerContributionOverride ?? ''} disabled={payrollPrepared} placeholder={euro(estimatedContributions.worker)} onChange={event => updateMonthAdjustment({ workerContributionOverride: event.target.value === '' ? null : Number(event.target.value) })} /></label><label>Aportación empleadora<input type="number" min="0" step="0.01" value={monthAdjustment.employerContributionOverride ?? ''} disabled={payrollPrepared} placeholder={euro(estimatedContributions.employer)} onChange={event => updateMonthAdjustment({ employerContributionOverride: event.target.value === '' ? null : Number(event.target.value) })} /></label><strong>{monthAdjustment.workerContributionOverride !== null || monthAdjustment.employerContributionOverride !== null ? 'Importe oficial introducido' : 'Usando estimación'}</strong></section>}
+        {activeView === 'documents' && <section className="receipt-archive"><div className="archive-head"><div><span>HISTORIAL DE CIERRES</span><h3>Copias archivadas de recibos</h3><p>Se conservan en este dispositivo. Cada nuevo cierre crea otra revisión; las anteriores no se sustituyen.</p></div><strong>{closedMonthSnapshots.length} {closedMonthSnapshots.length === 1 ? 'copia' : 'copias'}</strong></div><div className="archive-list">{closedMonthSnapshots.length ? [...closedMonthSnapshots].reverse().map(snapshot => <article key={snapshot.id}><div><b>{monthLabel(snapshot.month)} · revisión {snapshot.revision}</b><small>Cerrado el {new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(snapshot.closedAt))}</small><code title={snapshot.integrity}>Huella {snapshot.integrity.slice(0, 12)}…</code></div><div><span>Neto</span><strong>{euro(snapshot.summary.net)}</strong></div><button onClick={() => downloadArchivedReceipt(snapshot)}>Descargar copia</button></article>) : <p className="empty-archive">Todavía no hay meses cerrados con copia archivada.</p>}</div></section>}
+        {activeView === 'documents' && reopenEvents.length > 0 && <section className="reopen-history"><span>REAPERTURAS REGISTRADAS</span>{[...reopenEvents].reverse().map(event => <article key={event.id}><div><b>{monthLabel(event.month)} · después de revisión {event.previousRevision}</b><small>{new Intl.DateTimeFormat('es-ES', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(event.reopenedAt))}</small></div><p>{event.reason}</p></article>)}</section>}
         {activeView === 'home' && <>
         <section className="hero"><div><label><i /> RELACIÓN LABORAL ACTIVA</label><h2>{payrollPrepared ? 'Recibo de nómina disponible' : 'Revisa la asistencia'}</h2><p>{payrollPrepared ? 'El mes está cerrado y ya puedes descargar el recibo salarial.' : 'Confirma las jornadas para cerrar el mes y generar la nómina.'}</p></div><div className="next"><span>Próxima acción</span><b>{payrollPrepared ? 'RECIBO' : 'ASISTENCIA'}</b><small>{payrollPrepared ? 'Disponible' : 'Pendiente'}</small></div></section>
         <Title title="Este mes" action="Abrir asistencia →" onClick={() => setActiveView('attendance')} />
