@@ -206,10 +206,9 @@ export default function Home() {
   const sickDaysInMonth = attendanceDays.filter(day => attendanceStatus[day.key] === 'sick').length;
   const setPayrollPrepared = (ready: boolean) => {
     if (ready) { void archiveCurrentMonth(); return; }
-    const reason = window.prompt('Indica brevemente por qué reabres el mes. Este motivo quedará en el historial.');
-    if (!reason?.trim()) { window.setTimeout(() => notify('Reapertura cancelada: falta indicar el motivo'), 0); return; }
+    const reason = 'Reapertura manual para revisar o corregir los datos del mes';
     const previousRevision = closedMonthSnapshots.filter(snapshot => snapshot.month === attendanceMonth).length;
-    setReopenEvents(previous => [...previous, { id: `${attendanceMonth}-${Date.now()}`, month: attendanceMonth, reopenedAt: new Date().toISOString(), reason: reason.trim(), previousRevision }]);
+    setReopenEvents(previous => [...previous, { id: `${attendanceMonth}-${Date.now()}`, month: attendanceMonth, reopenedAt: new Date().toISOString(), reason, previousRevision }]);
     setClosedMonths(previous => ({ ...previous, [attendanceMonth]: false }));
   };
   const isVacationDate = (date: Date) => {
