@@ -188,11 +188,12 @@ export default function Home() {
   // horario vigente. Las bajas médicas se registran en asistencia, pero no se
   // convierten automáticamente en una deducción salarial.
   const additionalHoursAmount = cents(monthAdjustment.additionalHours * contract.hourlyRate);
-  const monthlyGross = Math.max(0, cents(proratedSalary + additionalHoursAmount + monthAdjustment.holidayCompensation - monthAdjustment.unpaidAbsenceDeduction + monthAdjustment.otherAdjustment));
+  const unpaidAbsenceAmount = cents(monthAdjustment.unpaidAbsenceDeduction * contract.hourlyRate);
+  const monthlyGross = Math.max(0, cents(proratedSalary + additionalHoursAmount + monthAdjustment.holidayCompensation - unpaidAbsenceAmount + monthAdjustment.otherAdjustment));
   const otherEarning = Math.max(0, monthAdjustment.otherAdjustment);
   const otherDeduction = Math.max(0, -monthAdjustment.otherAdjustment);
   const totalAccrued = cents(proratedSalary + additionalHoursAmount + monthAdjustment.holidayCompensation + otherEarning);
-  const wageDeductions = cents(monthAdjustment.unpaidAbsenceDeduction + otherDeduction);
+  const wageDeductions = cents(unpaidAbsenceAmount + otherDeduction);
   const estimatedContributions = useMemo(() => socialSecurity(monthlyGross, contributionYear, contract.contributionCommonBenefit, contract.unemploymentFogasaBonus, contract.professionalContingencyRate), [monthlyGross, contributionYear, contract.contributionCommonBenefit, contract.unemploymentFogasaBonus, contract.professionalContingencyRate]);
   const workerContribution = monthAdjustment.workerContributionOverride ?? estimatedContributions.worker;
   const employerContribution = monthAdjustment.employerContributionOverride ?? estimatedContributions.employer;
@@ -336,7 +337,7 @@ export default function Home() {
     pdf.setFont('helvetica', 'bold').setFontSize(8).text('II. DEDUCCIONES', left + 3, 156.5);
     pdf.setFont('helvetica', 'normal').setFontSize(6.5).text('Aportación trabajadora a la Seguridad Social (estimada)', left + 3, 166).text(euro(deduction), 190, 166, { align: 'right' });
     pdf.text('Baja médica registrada', left + 3, 171).text(`${sickDaysInMonth} jornadas`, 190, 171, { align: 'right' });
-    pdf.text('Ausencias no retribuidas', left + 3, 176).text(euro(monthAdjustment.unpaidAbsenceDeduction), 190, 176, { align: 'right' });
+    pdf.text(`Ausencias no retribuidas (${monthAdjustment.unpaidAbsenceDeduction.toLocaleString('es-ES')} h)`, left + 3, 176).text(euro(unpaidAbsenceAmount), 190, 176, { align: 'right' });
     pdf.text('Otras deducciones / regularización negativa', left + 3, 181).text(euro(otherDeduction), 190, 181, { align: 'right' });
     pdf.text('Retención IRPF', left + 3, 186).text('No calculada', 190, 186, { align: 'right' });
     pdf.setDrawColor(205, 217, 223).line(left + 3, 184, 192, 184);
