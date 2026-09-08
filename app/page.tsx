@@ -96,6 +96,7 @@ const officialDate = (value: string) => value ? value.split('-').reverse().join(
 function seniority(value: string) {
   const start = new Date(`${value}T12:00:00`);
   const now = new Date();
+  if (start > now) return `Pendiente · comienza el ${formatDate(value)}`;
   let years = now.getFullYear() - start.getFullYear();
   let months = now.getMonth() - start.getMonth();
   let days = now.getDate() - start.getDate();
