@@ -114,7 +114,7 @@ export default function Home() {
   const [draft, setDraft] = useState<Contract>(defaults);
   const [contractWizard, setContractWizard] = useState(false);
   const [wizardStep, setWizardStep] = useState(1);
-  const [attendanceMonth, setAttendanceMonth] = useState('2026-08');
+  const [attendanceMonth, setAttendanceMonth] = useState(defaults.startDate.slice(0, 7));
   const [attendanceStatus, setAttendanceStatus] = useState<Record<string, 'scheduled' | 'completed' | 'sick' | 'vacation' | 'holiday'>>({});
   const [closedMonths, setClosedMonths] = useState<Record<string, boolean>>({});
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
@@ -130,7 +130,7 @@ export default function Home() {
   useEffect(() => {
     const saved = window.localStorage.getItem('contrata-hogar-contract');
     if (saved) {
-      try { const parsed = { ...defaults, ...JSON.parse(saved) } as Contract; setContract(parsed); setDraft(parsed); } catch { /* ignore invalid local data */ }
+      try { const parsed = { ...defaults, ...JSON.parse(saved) } as Contract; setContract(parsed); setDraft(parsed); setAttendanceMonth(parsed.startDate.slice(0, 7)); setAnnualYear(Number(parsed.startDate.slice(0, 4))); } catch { /* ignore invalid local data */ }
     }
     const savedAttendance = window.localStorage.getItem('contrata-hogar-attendance');
     if (savedAttendance) {
