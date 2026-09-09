@@ -215,3 +215,4 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .wizard-fields label:has(input[placeholder="11 dígitos, sin espacios"]){display:none}
 .content:has(.attendance-head) .settlement-fields{grid-template-columns:1fr}.content:has(.attendance-head) .settlement-fields>label:nth-child(3),.content:has(.attendance-head) .settlement-fields>label:nth-child(5){font-size:0!important}.content:has(.attendance-head) .settlement-fields>label:nth-child(3)::before,.content:has(.attendance-head) .settlement-fields>label:nth-child(5)::before{font-size:10px}
 .schedule-row input[type="time"]{width:60%;justify-self:center}
+.wizard-fields input[type="date"]{width:60%;max-width:100%}
