@@ -169,6 +169,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 function Dashboard() {
+  const auth = useContext(AuthContext);
+  const currentUser = auth?.user;
+  const authSession = auth?.session;
   const [activeView, setActiveView] = useState<'home' | 'contract' | 'attendance' | 'annual' | 'documents'>('home');
   const [contract, setContract] = useState<Contract>(defaults);
   const [draft, setDraft] = useState<Contract>(defaults);
@@ -190,48 +193,41 @@ function Dashboard() {
   const [toast, setToast] = useState('');
 
   useEffect(() => {
-    const saved = window.localStorage.getItem('contrata-hogar-contract');
-    if (saved) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- hidrata el estado desde el almacenamiento local al iniciar.
-      try { const parsed = { ...defaults, ...JSON.parse(saved) } as Contract; setContract(parsed); setDraft(parsed); setWeeklyHoursInput(String(parsed.weeklyHours).replace('.', ',')); setHourlyRateInput(String(parsed.hourlyRate).replace('.', ',')); setAttendanceMonth(parsed.startDate.slice(0, 7)); setAnnualYear(Number(parsed.startDate.slice(0, 4))); } catch { /* ignore invalid local data */ }
-    }
-    const savedAttendance = window.localStorage.getItem('contrata-hogar-attendance');
-    if (savedAttendance) {
-      try { const parsed = JSON.parse(savedAttendance) as Record<string, 'scheduled' | 'completed' | 'sick' | 'vacation' | 'holiday'>; setAttendanceStatus(Object.fromEntries(Object.entries(parsed).filter(([, status]) => status !== 'vacation'))); } catch { /* ignore invalid local data */ }
-    }
-    const savedClosedMonths = window.localStorage.getItem('contrata-hogar-closed-months');
-    if (savedClosedMonths) {
-      try { setClosedMonths(JSON.parse(savedClosedMonths)); } catch { /* ignore invalid local data */ }
-    }
-    const savedVacationPeriods = window.localStorage.getItem('contrata-hogar-vacation-periods');
-    if (savedVacationPeriods) {
-      try { setVacationPeriods(JSON.parse(savedVacationPeriods)); } catch { /* ignore invalid local data */ }
-    }
-    const savedMonthlyAdjustments = window.localStorage.getItem('contrata-hogar-monthly-adjustments');
-    if (savedMonthlyAdjustments) {
-      try { setMonthlyAdjustments(JSON.parse(savedMonthlyAdjustments)); } catch { /* ignore invalid local data */ }
-    }
-    const savedSnapshots = window.localStorage.getItem('contrata-hogar-closed-snapshots');
-    if (savedSnapshots) {
-      try { setClosedMonthSnapshots(JSON.parse(savedSnapshots)); } catch { /* ignore invalid local data */ }
-    }
-    const savedReopenEvents = window.localStorage.getItem('contrata-hogar-reopen-events');
-    if (savedReopenEvents) {
-      try { setReopenEvents(JSON.parse(savedReopenEvents)); } catch { /* ignore invalid local data */ }
-    }
-    setAttendanceLoaded(true);
-  }, []);
+    if (!currentUser || !authSession) return;
+    let cancelled = false;
+    const headers = { apikey: supabaseKey, Authorization: `Bearer ${authSession.access_token}` };
+    const applyData = (data: Record<string, unknown>) => {
+      if (cancelled) return;
+      if (data.contract) { const parsed = { ...defaults, ...(data.contract as object) } as Contract; setContract(parsed); setDraft(parsed); setWeeklyHoursInput(String(parsed.weeklyHours).replace('.', ',')); setHourlyRateInput(String(parsed.hourlyRate).replace('.', ',')); setAttendanceMonth(parsed.startDate.slice(0, 7)); setAnnualYear(Number(parsed.startDate.slice(0, 4))); }
+      if (data.attendanceStatus) setAttendanceStatus(data.attendanceStatus as typeof attendanceStatus);
+      if (data.closedMonths) setClosedMonths(data.closedMonths as typeof closedMonths);
+      if (data.vacationPeriods) setVacationPeriods(data.vacationPeriods as VacationPeriod[]);
+      if (data.monthlyAdjustments) setMonthlyAdjustments(data.monthlyAdjustments as typeof monthlyAdjustments);
+      if (data.closedMonthSnapshots) setClosedMonthSnapshots(data.closedMonthSnapshots as ClosedMonthSnapshot[]);
+      if (data.reopenEvents) setReopenEvents(data.reopenEvents as ReopenEvent[]);
+      setAttendanceLoaded(true);
+    };
+    fetch(`${supabaseUrl}/rest/v1/user_app_data?select=data&user_id=eq.${currentUser.id}`, { headers }).then(response => response.ok ? response.json() : []).then(rows => {
+      if (cancelled) return;
+      if (Array.isArray(rows) && rows[0]?.data) { applyData(rows[0].data as Record<string, unknown>); return; }
+      // Migrate legacy device data only for the same signed-in user that owned
+      // the previous local session; never copy it into a different account.
+      let legacyOwner = '';
+      try { legacyOwner = (JSON.parse(window.localStorage.getItem('contrata-hogar-auth') || '{}') as AuthSession).user?.id || ''; } catch { /* ignore */ }
+      if (legacyOwner !== currentUser.id) { setAttendanceLoaded(true); return; }
+      const migrated: Record<string, unknown> = {};
+      const read = (key: string) => { const value = window.localStorage.getItem(key); if (value) { try { return JSON.parse(value); } catch { return undefined; } } return undefined; };
+      migrated.contract = read('contrata-hogar-contract'); migrated.attendanceStatus = read('contrata-hogar-attendance'); migrated.closedMonths = read('contrata-hogar-closed-months'); migrated.vacationPeriods = read('contrata-hogar-vacation-periods'); migrated.monthlyAdjustments = read('contrata-hogar-monthly-adjustments'); migrated.closedMonthSnapshots = read('contrata-hogar-closed-snapshots'); migrated.reopenEvents = read('contrata-hogar-reopen-events');
+      applyData(migrated);
+    }).catch(() => setAttendanceLoaded(true));
+    return () => { cancelled = true; };
+  }, [currentUser?.id, authSession?.access_token]);
 
   useEffect(() => {
-    if (attendanceLoaded) {
-      window.localStorage.setItem('contrata-hogar-attendance', JSON.stringify(attendanceStatus));
-      window.localStorage.setItem('contrata-hogar-closed-months', JSON.stringify(closedMonths));
-      window.localStorage.setItem('contrata-hogar-vacation-periods', JSON.stringify(vacationPeriods));
-      window.localStorage.setItem('contrata-hogar-monthly-adjustments', JSON.stringify(monthlyAdjustments));
-      window.localStorage.setItem('contrata-hogar-closed-snapshots', JSON.stringify(closedMonthSnapshots));
-      window.localStorage.setItem('contrata-hogar-reopen-events', JSON.stringify(reopenEvents));
-    }
-  }, [attendanceLoaded, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents]);
+    if (!attendanceLoaded || !currentUser || !authSession) return;
+    const data = { contract, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents };
+    fetch(`${supabaseUrl}/rest/v1/user_app_data?on_conflict=user_id`, { method: 'POST', headers: { ...({ apikey: supabaseKey, Authorization: `Bearer ${authSession.access_token}`, 'Content-Type': 'application/json' }), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ user_id: currentUser.id, data }) }).catch(() => undefined);
+  }, [attendanceLoaded, currentUser?.id, authSession?.access_token, contract, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
