@@ -115,14 +115,37 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [inviteMode, setInviteMode] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   useEffect(() => {
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const accessToken = hash.get('access_token');
+    const refreshToken = hash.get('refresh_token') || undefined;
+    if (accessToken && supabaseUrl && supabaseKey) {
+      fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${accessToken}` } }).then(response => response.json()).then(data => {
+        const userData = data as { id?: string; email?: string };
+        if (userData.id) { setEmail(userData.email || ''); setSession({ access_token: accessToken, refresh_token: refreshToken, user: { id: userData.id, email: userData.email } }); setInviteMode(true); }
+      }).catch(() => undefined).finally(() => setLoading(false));
+      return;
+    }
     const saved = window.localStorage.getItem('contrata-hogar-auth');
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hidrata la sesión persistida al iniciar.
     if (saved) { try { setSession(JSON.parse(saved)); } catch { window.localStorage.removeItem('contrata-hogar-auth'); } }
     setLoading(false);
   }, []);
+  const setInvitedPassword = async (event: React.FormEvent) => {
+    event.preventDefault(); setError('');
+    if (!session || password.length < 8 || password !== confirmPassword) { setError(password.length < 8 ? 'La contraseña debe tener al menos 8 caracteres.' : 'Las contraseñas no coinciden.'); return; }
+    setLoading(true);
+    try {
+      const response = await fetch(`${supabaseUrl}/auth/v1/user`, { method: 'PUT', headers: { apikey: supabaseKey || '', Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      if (!response.ok) throw new Error('No se ha podido establecer la contraseña');
+      window.localStorage.setItem('contrata-hogar-auth', JSON.stringify(session)); window.history.replaceState({}, '', window.location.pathname); setInviteMode(false); setPassword(''); setConfirmPassword('');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se ha podido establecer la contraseña'); }
+    setLoading(false);
+  };
   const signIn = async (event: React.FormEvent) => {
     event.preventDefault(); setError(''); setLoading(true);
     if (!supabaseUrl || !supabaseKey) { setError('La autenticación todavía no está configurada.'); setLoading(false); return; }
@@ -137,6 +160,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   };
   const signOut = () => { window.localStorage.removeItem('contrata-hogar-auth'); setSession(null); };
   if (loading) return <div className="auth-screen"><div className="auth-card"><b>Contrata Hogar</b><p>Cargando…</p></div></div>;
+  if (inviteMode && session) return <main className="auth-screen"><form className="auth-card" onSubmit={setInvitedPassword}><span>CONTRATA HOGAR</span><h1>Configura tu acceso</h1><p>Invitación aceptada para {email}. Elige una contraseña para continuar.</p><label>Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} minLength={8} required /></label><label>Repite la contraseña<input type="password" autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} minLength={8} required /></label>{error && <div className="auth-error">{error}</div>}<button className="primary" type="submit" disabled={loading}>Guardar contraseña</button></form></main>;
   if (!session) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><span>CONTRATA HOGAR</span><h1>Iniciar sesión</h1><p>Accede a la gestión de tu relación laboral.</p><label>Email<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required /></label><label>Contraseña<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>{error && <div className="auth-error">{error}</div>}<button className="primary" type="submit" disabled={loading}>Entrar</button><small>El acceso se gestiona de forma segura mediante Supabase.</small></form></main>;
   return <AuthContext.Provider value={{ user: session.user, session, signOut }}><>{children}</></AuthContext.Provider>;
 }
