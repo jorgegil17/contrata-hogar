@@ -224,3 +224,6 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .content:has(.receipt-archive)>.app-view{order:1}
 .content:has(.receipt-archive)>.receipt-archive{order:2}
 .content:has(.receipt-archive)>.reopen-history{order:3}
+.annual-view>.year-selector{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+.annual-view>.year-selector button{width:36px;height:36px;border:0;border-radius:50%;background:#edf7fc;color:#087dbd;font-size:24px}
+.annual-view>.year-selector strong{display:flex;align-items:center;justify-content:center;min-height:38px;border:2px solid #087dbd;border-radius:18px;background:#fff;color:var(--ink);font-size:14px;text-align:center}
