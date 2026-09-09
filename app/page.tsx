@@ -196,9 +196,18 @@ function Dashboard() {
     if (!currentUser || !authSession) return;
     let cancelled = false;
     const headers = { apikey: supabaseKey, Authorization: `Bearer ${authSession.access_token}` };
-    const applyData = (data: Record<string, unknown>) => {
+    const applyData = (data: Record<string, unknown> | null | undefined) => {
       if (cancelled) return;
-      if (data.contract) { const parsed = { ...defaults, ...(data.contract as object) } as Contract; setContract(parsed); setDraft(parsed); setWeeklyHoursInput(String(parsed.weeklyHours).replace('.', ',')); setHourlyRateInput(String(parsed.hourlyRate).replace('.', ',')); setAttendanceMonth(parsed.startDate.slice(0, 7)); setAnnualYear(Number(parsed.startDate.slice(0, 4))); }
+      if (data?.contract) {
+        const parsed = { ...defaults, ...(data.contract as object) } as Contract;
+        // Older local/Supabase records may not contain the newer schedule
+        // fields, or may contain null values. Keep the dashboard renderable.
+        parsed.scheduleEntries = Array.isArray(parsed.scheduleEntries) ? parsed.scheduleEntries : defaults.scheduleEntries;
+        parsed.startDate = typeof parsed.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate) ? parsed.startDate : defaults.startDate;
+        parsed.weeklyHours = Number.isFinite(Number(parsed.weeklyHours)) ? Number(parsed.weeklyHours) : defaults.weeklyHours;
+        parsed.hourlyRate = Number.isFinite(Number(parsed.hourlyRate)) ? Number(parsed.hourlyRate) : defaults.hourlyRate;
+        setContract(parsed); setDraft(parsed); setWeeklyHoursInput(String(parsed.weeklyHours).replace('.', ',')); setHourlyRateInput(String(parsed.hourlyRate).replace('.', ',')); setAttendanceMonth(parsed.startDate.slice(0, 7)); setAnnualYear(Number(parsed.startDate.slice(0, 4)));
+      }
       if (data.attendanceStatus) setAttendanceStatus(data.attendanceStatus as typeof attendanceStatus);
       if (data.closedMonths) setClosedMonths(data.closedMonths as typeof closedMonths);
       if (data.vacationPeriods) setVacationPeriods(data.vacationPeriods as VacationPeriod[]);
@@ -209,7 +218,7 @@ function Dashboard() {
     };
     fetch(`${supabaseUrl}/rest/v1/user_app_data?select=data&user_id=eq.${currentUser.id}`, { headers }).then(response => response.ok ? response.json() : []).then(rows => {
       if (cancelled) return;
-      if (Array.isArray(rows) && rows[0]?.data) { applyData(rows[0].data as Record<string, unknown>); return; }
+      if (Array.isArray(rows) && rows[0]?.data && typeof rows[0].data === 'object') { applyData(rows[0].data as Record<string, unknown>); return; }
       // Migrate legacy device data only for the same signed-in user that owned
       // the previous local session; never copy it into a different account.
       let legacyOwner = '';
