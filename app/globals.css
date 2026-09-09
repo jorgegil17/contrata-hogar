@@ -100,7 +100,7 @@ dd input{width:70px;border:0;border-bottom:1px dashed #9daaa5;color:var(--ink);f
 .contract-actions{min-width:210px}
 .toast{position:fixed;right:24px;bottom:24px;background:#087dbd;color:#fff;padding:13px 18px;border-radius:14px;box-shadow:0 12px 30px #087dbd44;font-size:12px;z-index:20}
 .modal-backdrop{position:fixed;inset:0;background:#18313e73;backdrop-filter:blur(5px);display:grid;place-items:center;padding:22px;z-index:30;overflow-y:auto}
-.edit-modal{width:min(520px,100%);max-height:calc(100dvh - 44px);overflow-y:auto;background:#fff;border-radius:24px;padding:28px;box-shadow:0 30px 80px #102d3c4d}
+.edit-modal{width:min(520px,calc(100vw - 24px));max-width:100%;max-height:calc(100dvh - 44px);overflow-y:auto;overflow-x:hidden;background:#fff;border-radius:24px;padding:28px;box-shadow:0 30px 80px #102d3c4d;box-sizing:border-box}.edit-modal input,.edit-modal select,.edit-modal textarea{max-width:100%;box-sizing:border-box}.field-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
 .modal-head span{color:var(--green);font-size:9px;font-weight:800;letter-spacing:1.1px}
 .modal-head h2{margin:6px 0 0;font-size:25px;letter-spacing:-.7px}
