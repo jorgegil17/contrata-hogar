@@ -172,6 +172,10 @@ export default function Home() {
     }
   }, [attendanceLoaded, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeView]);
+
   const salary = useMemo(() => +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2), [contract]);
   const contributionYear = Number(attendanceMonth.slice(0, 4));
   const monthAdjustment = { ...emptyMonthlyAdjustment, ...(monthlyAdjustments[attendanceMonth] || {}) };
