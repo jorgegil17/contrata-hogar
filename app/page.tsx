@@ -376,8 +376,15 @@ export default function Home() {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(payload) + snapshot.pdfData));
     const currentIntegrity = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
     if (currentIntegrity !== snapshot.integrity) { notify('La copia archivada no supera la comprobación de integridad'); return; }
-    const anchor = document.createElement('a'); anchor.href = snapshot.pdfData; anchor.download = `recibo-salario-${snapshot.month}-revision-${snapshot.revision}.pdf`; anchor.click();
-    notify(`Copia archivada · revisión ${snapshot.revision}`);
+    // Convertimos el PDF archivado en un Blob para que la descarga funcione
+    // también en navegadores móviles que bloquean el atributo download sobre
+    // data: URLs.
+    const [, encodedPdf] = snapshot.pdfData.split(',', 2);
+    const bytes = Uint8Array.from(atob(encodedPdf), character => character.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `recibo-salario-${snapshot.month}-revision-${snapshot.revision}.pdf`; document.body.appendChild(anchor); anchor.click(); anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify('Recibo de salario descargado');
   }
   async function archiveCurrentMonth() {
     const pdf = buildReceipt();
