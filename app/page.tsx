@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
-import { PDFDocument, StandardFonts, degrees, rgb } from 'pdf-lib';
 
 type ScheduleEntry = { day: string; start: string; end: string };
 type VacationPeriod = { id: string; start: string; end: string };
@@ -90,8 +89,6 @@ function formatDate(value: string) {
     .format(new Date(`${value}T12:00:00`)).replace('.', '');
 }
 
-const officialDate = (value: string) => value ? value.split('-').reverse().join('/') : '';
-
 function seniority(value: string) {
   const start = new Date(`${value}T12:00:00`);
   const now = new Date();
@@ -132,6 +129,7 @@ export default function Home() {
   useEffect(() => {
     const saved = window.localStorage.getItem('contrata-hogar-contract');
     if (saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hidrata el estado desde el almacenamiento local al iniciar.
       try { const parsed = { ...defaults, ...JSON.parse(saved) } as Contract; setContract(parsed); setDraft(parsed); setWeeklyHoursInput(String(parsed.weeklyHours).replace('.', ',')); setHourlyRateInput(String(parsed.hourlyRate).replace('.', ',')); setAttendanceMonth(parsed.startDate.slice(0, 7)); setAnnualYear(Number(parsed.startDate.slice(0, 4))); } catch { /* ignore invalid local data */ }
     }
     const savedAttendance = window.localStorage.getItem('contrata-hogar-attendance');
@@ -224,10 +222,10 @@ export default function Home() {
     setReopenEvents(previous => [...previous, { id: `${attendanceMonth}-${Date.now()}`, month: attendanceMonth, reopenedAt: new Date().toISOString(), reason, previousRevision }]);
     setClosedMonths(previous => ({ ...previous, [attendanceMonth]: false }));
   };
-  const isVacationDate = (date: Date) => {
+  const isVacationDate = useCallback((date: Date) => {
     const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     return vacationPeriods.some(period => value >= period.start && value <= period.end);
-  };
+  }, [vacationPeriods]);
   const reviewedAttendanceDays = attendanceDays.filter(day => isVacationDate(day.date) || attendanceStatus[day.key] === 'completed' || attendanceStatus[day.key] === 'sick' || attendanceStatus[day.key] === 'holiday').length;
   const annualMonths = useMemo(() => Array.from({ length: 12 }, (_, index) => {
     const month = `${annualYear}-${String(index + 1).padStart(2, '0')}`;
@@ -240,7 +238,7 @@ export default function Home() {
       sick: days.filter(day => !isVacationDate(day.date) && attendanceStatus[day.key] === 'sick').length,
       vacation: days.filter(day => isVacationDate(day.date)).length,
     };
-  }), [annualYear, attendanceStatus, contract.scheduleEntries, contract.startDate, vacationPeriods]);
+  }), [annualYear, attendanceStatus, contract.scheduleEntries, contract.startDate, isVacationDate]);
   const annualTotals = annualMonths.reduce((total, month) => ({ planned: total.planned + month.planned, worked: total.worked + month.worked, sick: total.sick + month.sick, vacation: total.vacation + month.vacation }), { planned: 0, worked: 0, sick: 0, vacation: 0 });
   const contractualDaysPerWeek = Math.max(1, new Set((contract.scheduleEntries || []).map(entry => entry.day)).size);
   const vacationPeriodsForYear = vacationPeriods.filter(period => new Date(`${period.start}T12:00:00`).getFullYear() === annualYear);
@@ -290,12 +288,6 @@ export default function Home() {
     if (used + days > entitlement + .01) { notify(`El periodo supera el saldo disponible de ${entitlement.toLocaleString('es-ES')} días`); return; }
     setVacationPeriods([...vacationPeriods, { id: `${Date.now()}`, start: vacationStart, end: vacationEnd }].sort((a, b) => a.start.localeCompare(b.start)));
     notify(`Periodo de ${days} días naturales añadido`);
-  };
-  const removeVacationPeriod = (period: VacationPeriod) => {
-    const affectedClosedMonth = Object.keys(closedMonths).find(month => closedMonths[month] && period.start.slice(0, 7) <= month && period.end.slice(0, 7) >= month);
-    if (affectedClosedMonth) { notify(`Abre primero ${monthLabel(affectedClosedMonth)} para modificar sus vacaciones`); return; }
-    setVacationPeriods(vacationPeriods.filter(item => item.id !== period.id));
-    notify('Periodo de vacaciones eliminado');
   };
   const updateSchedule = (index: number, update: Partial<ScheduleEntry>) => setDraft({ ...draft, scheduleEntries: draft.scheduleEntries.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...update } : entry) });
   const addSchedule = () => setDraft({ ...draft, scheduleEntries: [...draft.scheduleEntries, { day: 'Lunes', start: '10:00', end: '13:00' }] });
@@ -395,60 +387,10 @@ export default function Home() {
     const encoded = new TextEncoder().encode(JSON.stringify(payload) + pdfData);
     const digest = await crypto.subtle.digest('SHA-256', encoded);
     const integrity = Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
-    const snapshot: ClosedMonthSnapshot = { id: `${attendanceMonth}-${revision}-${Date.now()}`, ...payload, integrity, pdfData };
+    const snapshot: ClosedMonthSnapshot = { id: `${attendanceMonth}-${revision}-${integrity.slice(0, 12)}`, ...payload, integrity, pdfData };
     setClosedMonthSnapshots(previous => [...previous, snapshot]);
     setClosedMonths(previous => ({ ...previous, [attendanceMonth]: true }));
   }
-  const generateContract = async (finalDocument = false) => {
-    if (!contractReady) { openContractWizard(); notify(Math.abs(contractScheduleHours - contract.weeklyHours) < .01 ? 'El documento está incompleto: revisa los datos obligatorios' : `El horario suma ${contractScheduleHours.toLocaleString('es-ES')} h y la jornada pactada es de ${contract.weeklyHours.toLocaleString('es-ES')} h`); return; }
-    try {
-      const response = await fetch('/Contrato-indefinido-SEPE-editable.pdf');
-      if (!response.ok) throw new Error('No se ha podido cargar el modelo oficial');
-      const pdf = await PDFDocument.load(await response.arrayBuffer());
-      const form = pdf.getForm();
-      const monthlySalary = cents(contract.hourlyRate * contract.weeklyHours * 52 / 12);
-      const text = (name: string, value: string | number) => form.getTextField(name).setText(String(value));
-      const radio = (name: string, value: string) => form.getRadioGroup(name).select(value);
-      const check = (name: string) => form.getCheckBox(name).check();
-
-      text('AA0101-E09', contract.employerDni); text('AA0102', contract.employerName); text('AA0103-E09', contract.employerDni);
-      text('AA0104', 'Titular del hogar familiar'); text('AA0105', contract.employerName); text('AA0106', contract.employerAddress);
-      text('AA0107', contract.employerMunicipality); text('AA0109-E05', contract.employerPostcode); text('AA0110', 'España');
-      text('AA0201-E04', '0138'); text('AA0202-E11', contract.contributionAccount.replace(/\s/g, '')); text('AA0203', 'Servicio del hogar familiar');
-      text('AA0301', contract.workMunicipality); text('AA0303-E05', contract.workPostcode); text('AA0304', 'España');
-      text('AA0401', contract.employeeName); text('AA0402-E09', contract.employeeDni);
-      text('AA0404-E12', contract.employeeNss.replace(/\s/g, '')); text('AA0405', contract.employeeNationality); text('AA0407', 'Sin especificar');
-      text('AA0409', contract.employeeMunicipality); text('AA0411-E05', contract.employeePostcode); text('AA0412', 'España');
-      text('C0101', 'Empleado/a del hogar'); text('C0102', 'Personal al servicio del hogar familiar');
-      text('C0103', 'Limpieza y mantenimiento ordinario del domicilio familiar'); text('C0104', `${contract.workAddress}, ${contract.workMunicipality}`);
-      radio('C03BO1', 'Elección2'); text('C0304', contract.weeklyHours.toLocaleString('es-ES')); radio('C03BO2', 'Elección3');
-      text('C0305', scheduleText(contract.scheduleEntries)); radio('C03BO3', 'Elección2'); text('C0401-FE', officialDate(contract.startDate));
-      text('C0402', contract.hasTrialPeriod ? `${contract.trialPeriod} días` : 'No se establece');
-      text('C0501', monthlySalary.toLocaleString('es-ES', { minimumFractionDigits: 2 })); text('C0502', 'mensuales');
-      text('C0503', `Salario base y pagas extraordinarias prorrateadas en 12 mensualidades (${contract.hourlyRate.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €/hora)`);
-      radio('C06BO1', 'Elección2'); text('C0701', `${contract.vacationDays} días naturales`); radio('C09BO1', 'Elección2');
-      text('C0801', 'Real Decreto 1620/2011, Estatuto de los Trabajadores y normativa aplicable');
-      check('IP16CV1'); radio('IP16BO1', 'Elección2'); radio('IP16BO2', 'Elección2'); radio('IP16BO4', 'Elección2'); radio('IP16BO5', 'Elección2');
-
-      const signature = new Date(`${contract.signatureDate}T12:00:00`);
-      text('ICA02', contract.signaturePlace); text('ICA03', signature.getDate());
-      text('ICA04', new Intl.DateTimeFormat('es-ES', { month: 'long' }).format(signature)); text('ICA05', signature.getFullYear());
-      form.updateFieldAppearances(await pdf.embedFont(StandardFonts.Helvetica));
-      form.flatten();
-      for (let index = pdf.getPageCount() - 1; index >= 0; index--) if (![0, 1, 2, 3, 4, 16, 19].includes(index)) pdf.removePage(index);
-      if (!finalDocument) {
-        const font = await pdf.embedFont(StandardFonts.HelveticaBold);
-        pdf.getPages().forEach(page => page.drawText('BORRADOR', { x: 150, y: 360, size: 58, font, color: rgb(.68, .72, .77), opacity: .18, rotate: degrees(35) }));
-      }
-      const bytes = await pdf.save();
-      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/pdf' }));
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${finalDocument ? 'contrato-definitivo' : 'borrador-contrato'}-${contract.startDate}.pdf`; anchor.click(); URL.revokeObjectURL(url);
-      notify(finalDocument ? 'Contrato oficial definitivo descargado' : 'Borrador oficial descargado para revisar');
-    } catch (error) { console.error(error); notify('No se ha podido generar el PDF oficial. Revisa los datos e inténtalo de nuevo.'); }
-  };
-  const confirmFinalContract = () => {
-    if (window.confirm('¿Confirmas que has revisado todos los datos del borrador y quieres generar el contrato oficial definitivo para firmarlo?')) generateContract(true);
-  };
   const generateManagementSheet = () => {
     const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
     const gross = +(contract.hourlyRate * contract.weeklyHours * 52 / 12).toFixed(2);
@@ -523,4 +465,3 @@ export default function Home() {
 }
 
 function Title({ title, action, note, onClick }: { title: string; action?: string; note?: string; onClick?: () => void }) { return <div className="title"><h2>{title}</h2>{action ? <button onClick={onClick}>{action}</button> : <span>{note}</span>}</div>; }
-function Task({ day, month, title, detail, calm, onClick }: { day: string; month: string; title: string; detail: string; calm?: boolean; onClick: () => void }) { return <article><time className={calm ? 'calm' : ''}><b>{day}</b>{month}</time><p><strong>{title}</strong><small>{detail}</small></p><button onClick={onClick}>Recordarme</button></article>; }
