@@ -188,11 +188,12 @@ export default function Home() {
   // horario vigente. Las bajas médicas se registran en asistencia, pero no se
   // convierten automáticamente en una deducción salarial.
   const additionalHoursAmount = cents(monthAdjustment.additionalHours * contract.hourlyRate);
+  const holidayWorkedAmount = cents(monthAdjustment.holidayCompensation * contract.hourlyRate);
   const unpaidAbsenceAmount = cents(monthAdjustment.unpaidAbsenceDeduction * contract.hourlyRate);
-  const monthlyGross = Math.max(0, cents(proratedSalary + additionalHoursAmount + monthAdjustment.holidayCompensation - unpaidAbsenceAmount + monthAdjustment.otherAdjustment));
+  const monthlyGross = Math.max(0, cents(proratedSalary + additionalHoursAmount + holidayWorkedAmount - unpaidAbsenceAmount + monthAdjustment.otherAdjustment));
   const otherEarning = Math.max(0, monthAdjustment.otherAdjustment);
   const otherDeduction = Math.max(0, -monthAdjustment.otherAdjustment);
-  const totalAccrued = cents(proratedSalary + additionalHoursAmount + monthAdjustment.holidayCompensation + otherEarning);
+  const totalAccrued = cents(proratedSalary + additionalHoursAmount + holidayWorkedAmount + otherEarning);
   const wageDeductions = cents(unpaidAbsenceAmount + otherDeduction);
   const estimatedContributions = useMemo(() => socialSecurity(monthlyGross, contributionYear, contract.contributionCommonBenefit, contract.unemploymentFogasaBonus, contract.professionalContingencyRate), [monthlyGross, contributionYear, contract.contributionCommonBenefit, contract.unemploymentFogasaBonus, contract.professionalContingencyRate]);
   const workerContribution = monthAdjustment.workerContributionOverride ?? estimatedContributions.worker;
@@ -328,7 +329,7 @@ export default function Home() {
     pdf.setFontSize(7).text('CONCEPTO', left + 3, 109).text('IMPORTE', 190, 109, { align: 'right' });
     pdf.setFont('helvetica', 'normal').text('Salario base del periodo (pagas extraordinarias prorrateadas)', left + 3, 116).text(euro(proratedSalary), 190, 116, { align: 'right' });
     pdf.text(`Horas adicionales (${monthAdjustment.additionalHours.toLocaleString('es-ES')} h)`, left + 3, 122).text(euro(additionalHoursAmount), 190, 122, { align: 'right' });
-    pdf.text('Compensación económica por festivos trabajados', left + 3, 128).text(euro(monthAdjustment.holidayCompensation), 190, 128, { align: 'right' });
+    pdf.text(`Festivos trabajados (${monthAdjustment.holidayCompensation.toLocaleString('es-ES')} h)`, left + 3, 128).text(euro(holidayWorkedAmount), 190, 128, { align: 'right' });
     pdf.text('Otros devengos / regularización positiva', left + 3, 134).text(euro(otherEarning), 190, 134, { align: 'right' });
     pdf.setDrawColor(205, 217, 223).line(left + 3, 133, 192, 133);
     pdf.setFont('helvetica', 'bold').text('A. TOTAL DEVENGADO', left + 3, 140).text(euro(totalAccrued), 190, 140, { align: 'right' });
