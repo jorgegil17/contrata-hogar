@@ -108,8 +108,11 @@ function seniority(value: string) {
 type AuthUser = { id: string; email?: string };
 type AuthSession = { access_token: string; refresh_token?: string; user: AuthUser };
 const AuthContext = createContext<{ user: AuthUser; session: AuthSession; signOut: () => void } | null>(null);
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// The publishable Supabase key is safe to expose in browser code. Keep the
+// fallback so the hosted static build can authenticate even when build-time
+// environment variables are not injected by the hosting layer.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ilcdkcwfqqnxcuwomkva.supabase.co';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_Ch1a2D3Kq5ftL0DDuuI_lQ_7jU_l1-P';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(null);
