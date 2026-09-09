@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 
 type ScheduleEntry = { day: string; start: string; end: string };
@@ -105,7 +105,43 @@ function seniority(value: string) {
   return parts.join(' y ');
 }
 
-export default function Home() {
+type AuthUser = { id: string; email?: string };
+type AuthSession = { access_token: string; refresh_token?: string; user: AuthUser };
+const AuthContext = createContext<{ user: AuthUser; session: AuthSession; signOut: () => void } | null>(null);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const [session, setSession] = useState<AuthSession | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const saved = window.localStorage.getItem('contrata-hogar-auth');
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hidrata la sesión persistida al iniciar.
+    if (saved) { try { setSession(JSON.parse(saved)); } catch { window.localStorage.removeItem('contrata-hogar-auth'); } }
+    setLoading(false);
+  }, []);
+  const signIn = async (event: React.FormEvent) => {
+    event.preventDefault(); setError(''); setLoading(true);
+    if (!supabaseUrl || !supabaseKey) { setError('La autenticación todavía no está configurada.'); setLoading(false); return; }
+    try {
+      const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: supabaseKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+      const data = await response.json() as { access_token?: string; refresh_token?: string; user?: AuthUser; error_description?: string; msg?: string };
+      if (!response.ok || !data.access_token || !data.user) throw new Error(data.error_description || data.msg || 'No se ha podido iniciar sesión');
+      const next = { access_token: data.access_token, refresh_token: data.refresh_token, user: { id: data.user.id, email: data.user.email } } as AuthSession;
+      window.localStorage.setItem('contrata-hogar-auth', JSON.stringify(next)); setSession(next);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se ha podido iniciar sesión'); }
+    setLoading(false);
+  };
+  const signOut = () => { window.localStorage.removeItem('contrata-hogar-auth'); setSession(null); };
+  if (loading) return <div className="auth-screen"><div className="auth-card"><b>Contrata Hogar</b><p>Cargando…</p></div></div>;
+  if (!session) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><span>CONTRATA HOGAR</span><h1>Iniciar sesión</h1><p>Accede a la gestión de tu relación laboral.</p><label>Email<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required /></label><label>Contraseña<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>{error && <div className="auth-error">{error}</div>}<button className="primary" type="submit" disabled={loading}>Entrar</button><small>El acceso se gestiona de forma segura mediante Supabase.</small></form></main>;
+  return <AuthContext.Provider value={{ user: session.user, session, signOut }}><>{children}</></AuthContext.Provider>;
+}
+
+function Dashboard() {
   const [activeView, setActiveView] = useState<'home' | 'contract' | 'attendance' | 'annual' | 'documents'>('home');
   const [contract, setContract] = useState<Contract>(defaults);
   const [draft, setDraft] = useState<Contract>(defaults);
@@ -465,3 +501,5 @@ export default function Home() {
 }
 
 function Title({ title, action, note, onClick }: { title: string; action?: string; note?: string; onClick?: () => void }) { return <div className="title"><h2>{title}</h2>{action ? <button onClick={onClick}>{action}</button> : <span>{note}</span>}</div>; }
+
+export default function Home() { return <AuthGate><Dashboard /></AuthGate>; }
