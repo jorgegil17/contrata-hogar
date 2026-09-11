@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { jsPDF } from 'jspdf';
 
 type ScheduleEntry = { day: string; start: string; end: string };
@@ -105,73 +105,34 @@ function seniority(value: string) {
   return parts.join(' y ');
 }
 
-type AuthUser = { id: string; email?: string };
-type AuthSession = { access_token: string; refresh_token?: string; user: AuthUser };
-const AuthContext = createContext<{ user: AuthUser; session: AuthSession; signOut: () => void } | null>(null);
-// The publishable Supabase key is safe to expose in browser code. Keep the
-// fallback so the hosted static build can authenticate even when build-time
-// environment variables are not injected by the hosting layer.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ilcdkcwfqqnxcuwomkva.supabase.co';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_Ch1a2D3Kq5ftL0DDuuI_lQ_7jU_l1-P';
-
-function AuthGate({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<AuthSession | null>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [inviteMode, setInviteMode] = useState(false);
-  const [confirmPassword, setConfirmPassword] = useState('');
+function AccessGate({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = useState<'checking' | 'locked' | 'open'>('checking');
+  const [pin, setPin] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
   useEffect(() => {
-    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const accessToken = hash.get('access_token');
-    const refreshToken = hash.get('refresh_token') || undefined;
-    if (accessToken && supabaseUrl && supabaseKey) {
-      fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: supabaseKey, Authorization: `Bearer ${accessToken}` } }).then(response => response.json()).then(data => {
-        const userData = data as { id?: string; email?: string };
-        if (userData.id) { setEmail(userData.email || ''); setSession({ access_token: accessToken, refresh_token: refreshToken, user: { id: userData.id, email: userData.email } }); setInviteMode(true); }
-      }).catch(() => undefined).finally(() => setLoading(false));
-      return;
-    }
-    const saved = window.localStorage.getItem('contrata-hogar-auth');
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- hidrata la sesión persistida al iniciar.
-    if (saved) { try { setSession(JSON.parse(saved)); } catch { window.localStorage.removeItem('contrata-hogar-auth'); } }
-    setLoading(false);
+    fetch('/api/auth/status').then(response => setStatus(response.ok ? 'open' : 'locked')).catch(() => setStatus('locked'));
   }, []);
-  const setInvitedPassword = async (event: React.FormEvent) => {
-    event.preventDefault(); setError('');
-    if (!session || password.length < 8 || password !== confirmPassword) { setError(password.length < 8 ? 'La contraseña debe tener al menos 8 caracteres.' : 'Las contraseñas no coinciden.'); return; }
-    setLoading(true);
+
+  const unlock = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true); setError('');
     try {
-      const response = await fetch(`${supabaseUrl}/auth/v1/user`, { method: 'PUT', headers: { apikey: supabaseKey || '', Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-      if (!response.ok) throw new Error('No se ha podido establecer la contraseña');
-      window.localStorage.setItem('contrata-hogar-auth', JSON.stringify(session)); window.history.replaceState({}, '', window.location.pathname); setInviteMode(false); setPassword(''); setConfirmPassword('');
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se ha podido establecer la contraseña'); }
-    setLoading(false);
+      const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pin }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'No se ha podido abrir la aplicación.');
+      setPin(''); setStatus('open');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se ha podido abrir la aplicación.'); }
+    setSubmitting(false);
   };
-  const signIn = async (event: React.FormEvent) => {
-    event.preventDefault(); setError(''); setLoading(true);
-    if (!supabaseUrl || !supabaseKey) { setError('La autenticación todavía no está configurada.'); setLoading(false); return; }
-    try {
-      const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: supabaseKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-      const data = await response.json() as { access_token?: string; refresh_token?: string; user?: AuthUser; error_description?: string; msg?: string };
-      if (!response.ok || !data.access_token || !data.user) throw new Error(data.error_description || data.msg || 'No se ha podido iniciar sesión');
-      const next = { access_token: data.access_token, refresh_token: data.refresh_token, user: { id: data.user.id, email: data.user.email } } as AuthSession;
-      window.localStorage.setItem('contrata-hogar-auth', JSON.stringify(next)); setSession(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se ha podido iniciar sesión'); }
-    setLoading(false);
-  };
-  const signOut = () => { window.localStorage.removeItem('contrata-hogar-auth'); setSession(null); };
-  if (loading) return <div className="auth-screen"><div className="auth-card"><b>Contrata Hogar</b><p>Cargando…</p></div></div>;
-  if (inviteMode && session) return <main className="auth-screen"><form className="auth-card" onSubmit={setInvitedPassword}><span>CONTRATA HOGAR</span><h1>Configura tu acceso</h1><p>Invitación aceptada para {email}. Elige una contraseña para continuar.</p><label>Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} minLength={8} required /></label><label>Repite la contraseña<input type="password" autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} minLength={8} required /></label>{error && <div className="auth-error">{error}</div>}<button className="primary" type="submit" disabled={loading}>Guardar contraseña</button></form></main>;
-  if (!session) return <main className="auth-screen"><form className="auth-card" onSubmit={signIn}><span>CONTRATA HOGAR</span><h1>Iniciar sesión</h1><p>Accede a la gestión de tu relación laboral.</p><label>Email<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} required /></label><label>Contraseña<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required /></label>{error && <div className="auth-error">{error}</div>}<button className="primary" type="submit" disabled={loading}>Entrar</button><small>El acceso se gestiona de forma segura mediante Supabase.</small></form></main>;
-  return <AuthContext.Provider value={{ user: session.user, session, signOut }}><>{children}</></AuthContext.Provider>;
+
+  if (status === 'checking') return <main className="auth-screen"><div className="auth-card"><b>Contrata Hogar</b><p>Cargando…</p></div></main>;
+  if (status === 'locked') return <main className="auth-screen"><form className="auth-card" onSubmit={unlock}><span>CONTRATA HOGAR</span><h1>Abrir aplicación</h1><p>Introduce tu código personal de seis cifras. Se recuerda durante siete días en este dispositivo.</p><label>Código de acceso<input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" value={pin} onChange={event => setPin(event.target.value.replace(/\D/g, '').slice(0, 6))} required /></label>{error && <div className="auth-error">{error}</div>}<button className="primary" type="submit" disabled={submitting || pin.length !== 6}>{submitting ? 'Comprobando…' : 'Entrar'}</button><small>Los datos se guardan de forma privada y se sincronizan entre tus dispositivos.</small></form></main>;
+  return <>{children}</>;
 }
 
 function Dashboard() {
-  const auth = useContext(AuthContext);
-  const currentUser = auth?.user;
-  const authSession = auth?.session;
   const [activeView, setActiveView] = useState<'home' | 'contract' | 'attendance' | 'annual' | 'documents'>('home');
   const [contract, setContract] = useState<Contract>(defaults);
   const [draft, setDraft] = useState<Contract>(defaults);
@@ -193,15 +154,13 @@ function Dashboard() {
   const [toast, setToast] = useState('');
 
   useEffect(() => {
-    if (!currentUser || !authSession) return;
     let cancelled = false;
-    const headers = { apikey: supabaseKey, Authorization: `Bearer ${authSession.access_token}` };
     const applyData = (data: Record<string, unknown> | null | undefined) => {
       if (cancelled) return;
       if (data?.contract) {
         const parsed = { ...defaults, ...(data.contract as object) } as Contract;
-        // Older local/Supabase records may not contain the newer schedule
-        // fields, or may contain null values. Keep the dashboard renderable.
+        // Older saved records may not contain the newer schedule fields, or
+        // may contain null values. Keep the dashboard renderable.
         parsed.scheduleEntries = Array.isArray(parsed.scheduleEntries) ? parsed.scheduleEntries : defaults.scheduleEntries;
         parsed.startDate = typeof parsed.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.startDate) ? parsed.startDate : defaults.startDate;
         parsed.weeklyHours = Number.isFinite(Number(parsed.weeklyHours)) ? Number(parsed.weeklyHours) : defaults.weeklyHours;
@@ -216,27 +175,15 @@ function Dashboard() {
       if (data.reopenEvents) setReopenEvents(data.reopenEvents as ReopenEvent[]);
       setAttendanceLoaded(true);
     };
-    fetch(`${supabaseUrl}/rest/v1/user_app_data?select=data&user_id=eq.${currentUser.id}`, { headers }).then(response => response.ok ? response.json() : []).then(rows => {
-      if (cancelled) return;
-      if (Array.isArray(rows) && rows[0]?.data && typeof rows[0].data === 'object') { applyData(rows[0].data as Record<string, unknown>); return; }
-      // Migrate legacy device data only for the same signed-in user that owned
-      // the previous local session; never copy it into a different account.
-      let legacyOwner = '';
-      try { legacyOwner = (JSON.parse(window.localStorage.getItem('contrata-hogar-auth') || '{}') as AuthSession).user?.id || ''; } catch { /* ignore */ }
-      if (legacyOwner !== currentUser.id) { setAttendanceLoaded(true); return; }
-      const migrated: Record<string, unknown> = {};
-      const read = (key: string) => { const value = window.localStorage.getItem(key); if (value) { try { return JSON.parse(value); } catch { return undefined; } } return undefined; };
-      migrated.contract = read('contrata-hogar-contract'); migrated.attendanceStatus = read('contrata-hogar-attendance'); migrated.closedMonths = read('contrata-hogar-closed-months'); migrated.vacationPeriods = read('contrata-hogar-vacation-periods'); migrated.monthlyAdjustments = read('contrata-hogar-monthly-adjustments'); migrated.closedMonthSnapshots = read('contrata-hogar-closed-snapshots'); migrated.reopenEvents = read('contrata-hogar-reopen-events');
-      applyData(migrated);
-    }).catch(() => setAttendanceLoaded(true));
+    fetch('/api/app-data').then(response => response.ok ? response.json() : null).then(data => applyData(data as Record<string, unknown> | null)).catch(() => setAttendanceLoaded(true));
     return () => { cancelled = true; };
-  }, [currentUser?.id, authSession?.access_token]);
+  }, []);
 
   useEffect(() => {
-    if (!attendanceLoaded || !currentUser || !authSession) return;
+    if (!attendanceLoaded) return;
     const data = { contract, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents };
-    fetch(`${supabaseUrl}/rest/v1/user_app_data?on_conflict=user_id`, { method: 'POST', headers: { ...({ apikey: supabaseKey, Authorization: `Bearer ${authSession.access_token}`, 'Content-Type': 'application/json' }), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ user_id: currentUser.id, data }) }).catch(() => undefined);
-  }, [attendanceLoaded, currentUser?.id, authSession?.access_token, contract, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents]);
+    fetch('/api/app-data', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) }).catch(() => undefined);
+  }, [attendanceLoaded, contract, attendanceStatus, closedMonths, vacationPeriods, monthlyAdjustments, closedMonthSnapshots, reopenEvents]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -534,4 +481,4 @@ function Dashboard() {
 
 function Title({ title, action, note, onClick }: { title: string; action?: string; note?: string; onClick?: () => void }) { return <div className="title"><h2>{title}</h2>{action ? <button onClick={onClick}>{action}</button> : <span>{note}</span>}</div>; }
 
-export default function Home() { return <AuthGate><Dashboard /></AuthGate>; }
+export default function Home() { return <AccessGate><Dashboard /></AccessGate>; }
